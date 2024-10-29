@@ -8,6 +8,11 @@ root = tree.getroot()
 
 # 遍历并修改ID
 for edge in root.findall('edge'):
+    try:
+        if edge.get('function') == 'internal':
+            continue
+    except:
+        pass
     edge_id = edge.get('id')
     edge_from = edge.get('from')
     edge_to = edge.get('to')
