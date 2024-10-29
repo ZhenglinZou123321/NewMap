@@ -1,6 +1,6 @@
 <city>
-    <general inhabitants="10000" households="3000" childrenAgeLimit="19" retirementAgeLimit="66" carRate="0.5" unemploymentRate="0.05"
-                    footDistanceLimit="250" incomingTraffic="1000" outgoingTraffic="1000" />
+    <general inhabitants="15000" households="4000" childrenAgeLimit="19" retirementAgeLimit="66" carRate="0.6" unemploymentRate="0.05"
+                    footDistanceLimit="250" incomingTraffic="2000" outgoingTraffic="1000" />
     <parameters carPreference="0.50" meanTimePerKmInCity="360" freeTimeActivityRate="0.15" uniformRandomTraffic="0.30" departureVariation="1500" />
 
     <population>
@@ -59,11 +59,11 @@
         <street edge="j28tj19" population="69" workPosition="20"/>
         <street edge="j28tj25" population="20" workPosition="54"/>
         <street edge="j20tj26" population="56" workPosition="21"/>
-        <street edge="j20tj13" population="89" workPosition="25"/>
+        <street edge="j20tj13" population="20" workPosition="25"/>
         <street edge="j34tj21" population="93" workPosition="30"/>
         <street edge="j34tj29" population="21" workPosition="66"/>
         <street edge="j34tj26" population="21" workPosition="70"/>
-        <street edge="j21tj20" population="90" workPosition="25"/>
+        <street edge="j21tj20" population="30" workPosition="25"/>
         <street edge="j5tj12" population="87" workPosition="22"/>
         <street edge="j12tj13" population="27" workPosition="91"/>
         <street edge="j5tj4" population="25" workPosition="98"/>
@@ -73,9 +73,9 @@
         <street edge="j24tj25" population="93" workPosition="26"/>
         <street edge="j25tj27" population="21" workPosition="87"/>
         <street edge="j5tj6" population="60" workPosition="20"/>
-        <street edge="j13tj14" population="79" workPosition="23"/>
+        <street edge="j13tj14" population="20" workPosition="23"/>
         <street edge="j14tj7" population="89" workPosition="20"/>
-        <street edge="j14tj21" population="81" workPosition="23"/>
+        <street edge="j14tj21" population="30" workPosition="23"/>
         <street edge="j27tj29" population="22" workPosition="80"/>
         <street edge="j27tj32" population="24" workPosition="78"/>
         <street edge="j29tj30" population="88" workPosition="20"/>
