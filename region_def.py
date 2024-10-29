@@ -70,7 +70,7 @@ def main():
         lstr = f'<street edge="{edge_id}" population="{str(population)}" workPosition="{str(workPosition)}"/>\n'
         string = string + lstr
 
-    with open("region_def_output_1.xml", "w") as file:
+    with open("try1/region_def_output_1.xml", "w") as file:
         # 写入指定内容
         file.write(string)
     print("文件创建并写入成功")
