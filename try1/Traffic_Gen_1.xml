@@ -14,9 +14,12 @@
         <bracket beginAge="70" endAge="90" peopleNbr="1000" />
     </population>
 
+
+
     <workHours>
         <opening hour="30600" proportion="0.30" />
-        <opening hour="32400" proportion="0.70" />
+        <opening hour="32400" proportion="0.40" />
+        <opening hour="36000" proportion="0.30" />
         <closing hour="43200" proportion="0.20" />
         <closing hour="63000" proportion="0.20" />
         <closing hour="64800" proportion="0.50" />
@@ -35,7 +38,7 @@
         <street edge="j6tj5" population="30" workPosition="97"/>
         <street edge="j7tj6" population="28" workPosition="99"/>
         <street edge="j21tj14" population="10" workPosition="89"/>
-        <street edge="j29tj27" population="22" workPosition="55"/>
+        <street edge="j29tj27" population="22" workPosition="20"/>
         <street edge="j32tj27" population="24" workPosition="72"/>
         <street edge="j30tj29" population="20" workPosition="28"/>
         <street edge="j33tj29" population="30" workPosition="28"/>
@@ -43,16 +46,16 @@
         <street edge="j15tj14" population="30" workPosition="24"/>
         <street edge="j19tj12" population="29" workPosition="99"/>
         <street edge="j8tj7" population="30" workPosition="24"/>
-        <street edge="j9tj10" population="50" workPosition="99"/>
-        <street edge="j16tj17" population="96" workPosition="25"/>
-        <street edge="j23tj24" population="90" workPosition="30"/>
+        <street edge="j9tj10" population="150" workPosition="30"/>
+        <street edge="j16tj17" population="120" workPosition="25"/>
+        <street edge="j23tj24" population="120" workPosition="30"/>
         <street edge="j31tj25" population="25" workPosition="90"/>
         <street edge="j2tj6" population="22" workPosition="81"/>
         <street edge="j3tj7" population="28" workPosition="91"/>
         <street edge="j1tj4" population="29" workPosition="98"/>
         <street edge="j11tj10" population="80" workPosition="22"/>
         <street edge="j18tj11" population="64" workPosition="21"/>
-        <street edge="j20tj19" population="27" workPosition="90"/>
+        <street edge="j20tj19" population="27" workPosition="20"/>
         <street edge="j17tj18" population="22" workPosition="73"/>
         <street edge="j19tj18" population="58" workPosition="22"/>
         <street edge="j12tj11" population="75" workPosition="20"/>
@@ -61,8 +64,8 @@
         <street edge="j20tj26" population="56" workPosition="21"/>
         <street edge="j20tj13" population="20" workPosition="25"/>
         <street edge="j34tj21" population="20" workPosition="30"/>
-        <street edge="j34tj29" population="21" workPosition="66"/>
-        <street edge="j34tj26" population="21" workPosition="70"/>
+        <street edge="j34tj29" population="21" workPosition="20"/>
+        <street edge="j34tj26" population="21" workPosition="20"/>
         <street edge="j21tj20" population="30" workPosition="25"/>
         <street edge="j5tj12" population="40" workPosition="22"/>
         <street edge="j12tj13" population="27" workPosition="91"/>
@@ -70,7 +73,7 @@
         <street edge="j4tj10" population="29" workPosition="91"/>
         <street edge="j10tj17" population="92" workPosition="29"/>
         <street edge="j17tj24" population="97" workPosition="28"/>
-        <street edge="j24tj25" population="93" workPosition="26"/>
+        <street edge="j24tj25" population="120" workPosition="26"/>
         <street edge="j25tj27" population="21" workPosition="87"/>
         <street edge="j5tj6" population="60" workPosition="20"/>
         <street edge="j13tj14" population="20" workPosition="23"/>
@@ -85,9 +88,9 @@
         <street edge="j12tj19" population="63" workPosition="22"/>
         <street edge="j7tj8" population="30" workPosition="25"/>
         <street edge="j10tj9" population="25" workPosition="98"/>
-        <street edge="j17tj16" population="91" workPosition="27"/>
-        <street edge="j24tj23" population="99" workPosition="28"/>
-        <street edge="j25tj31" population="95" workPosition="28"/>
+        <street edge="j17tj16" population="130" workPosition="27"/>
+        <street edge="j24tj23" population="120" workPosition="28"/>
+        <street edge="j25tj31" population="120" workPosition="28"/>
         <street edge="j6tj2" population="24" workPosition="77"/>
         <street edge="j7tj3" population="30" workPosition="24"/>
         <street edge="j4tj1" population="22" workPosition="75"/>
@@ -98,13 +101,13 @@
         <street edge="j18tj19" population="24" workPosition="83"/>
         <street edge="j11tj12" population="63" workPosition="21"/>
         <street edge="j19tj28" population="22" workPosition="85"/>
-        <street edge="j26tj20" population="22" workPosition="56"/>
-        <street edge="j27tj26" population="22" workPosition="54"/>
-        <street edge="j13tj20" population="28" workPosition="91"/>
-        <street edge="j21tj34" population="20" workPosition="59"/>
+        <street edge="j26tj20" population="22" workPosition="30"/>
+        <street edge="j27tj26" population="22" workPosition="20"/>
+        <street edge="j13tj20" population="28" workPosition="40"/>
+        <street edge="j21tj34" population="20" workPosition="20"/>
         <street edge="j29tj34" population="0" workPosition="28"/>
-        <street edge="j26tj34" population="20" workPosition="54"/>
-        <street edge="j20tj21" population="21" workPosition="56"/>
+        <street edge="j26tj34" population="20" workPosition="20"/>
+        <street edge="j20tj21" population="21" workPosition="30"/>
         <street edge="j12tj5" population="52" workPosition="22"/>
     </streets>
 
@@ -138,10 +141,10 @@
     </cityGates>
 
     <schools>
-        <school edge="j27tj25" pos="189" beginAge="3" endAge="12" capacity="1000" opening="32400" closing="64800" />
-        <school edge="j28tj26" pos="189" beginAge="3" endAge="12" capacity="1000" opening="30600" closing="64800" />
-        <school edge="j6tj7" pos="240" beginAge="13" endAge="18" capacity="1000" opening="32400" closing="61200" />
-        <school edge="j14tj13" pos="190" beginAge="13" endAge="18" capacity="1000" opening="32400" closing="61200" />
+        <school edge="j27tj25" pos="189" beginAge="3" endAge="12" capacity="1000" opening="32400" closing="61200" />
+        <school edge="j28tj26" pos="189" beginAge="3" endAge="12" capacity="1000" opening="30600" closing="61200" />
+        <school edge="j6tj7" pos="240" beginAge="13" endAge="19" capacity="1000" opening="30600" closing="68400" />
+        <school edge="j14tj13" pos="190" beginAge="13" endAge="19" capacity="1000" opening="32400" closing="68400" />
     </schools>
 
 </city>

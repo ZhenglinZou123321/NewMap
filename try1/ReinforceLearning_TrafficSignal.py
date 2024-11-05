@@ -1,0 +1,205 @@
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import numpy as np
+import random
+from collections import deque
+import sumolib
+import traci
+
+
+def get_state(intersection_id):
+    state = []
+    traffic_signal_dict = {'r':0,'g':1}
+    for (index,lane) in enumerate(traci.trafficlight.getControlledLanes(intersection_id)):
+        num_vehicles = traci.lane.getLastStepVehicleNumber(lane)
+        waiting_time = traci.lane.getWaitingTime(lane)
+        current_phase_state = traci.trafficlight.getRedYellowGreenState(intersection_id)
+        signal_state = traffic_signal_dict[current_phase_state[index].lower]
+        # 将等待车辆数量和等待时间添加到状态向量
+        # 获取车道上所有车辆的 ID 列表
+        first_vehicle_delay = 0
+        waiting_vehicle_count = traci.lane.getLastStepHaltingNumber(lane)
+        try:
+            vehicle_ids = traci.lane.getLastStepVehicleIDs(lane)
+            # 获取第一辆车的 ID
+            first_vehicle_id = vehicle_ids[0]
+            first_vehicle_delay = traci.vehicle.getWaitingTime(first_vehicle_id)
+        except:
+            first_vehicle_delay = 0
+
+        state.extend([num_vehicles, waiting_vehicle_count,waiting_time,first_vehicle_delay,signal_state])
+    return np.array(state, dtype=np.float32)
+
+def get_reward(intersection_id):
+    reward = 0
+    for lane in traci.trafficlight.getControlledLanes(intersection_id):
+        waiting_time = traci.lane.getWaitingTime(lane)
+        reward -= waiting_time  # 延迟越少，奖励越大
+    return reward
+
+
+class GATLayer(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(GATLayer, self).__init__()
+        self.W = nn.Linear(in_features, out_features, bias=False)
+        self.a = nn.Linear(2 * out_features, 1, bias=False)
+
+    def forward(self, x, adj):
+        h = self.W(x)
+        N = h.size(0)
+
+        a_input = torch.cat([h.repeat(1, N).view(N * N, -1), h.repeat(N, 1)], dim=1)
+        e = self.a(a_input).squeeze(1)
+
+        attention = torch.nn.functional.softmax(e, dim=1)
+        h_prime = torch.matmul(attention, h)
+
+        return h_prime
+
+class GraphSAGEWithBiGRU(nn.Module):
+    def __init__(self, in_features, out_features):
+        super(GraphSAGEWithBiGRU, self).__init__()
+        self.gru = nn.GRU(in_features, out_features, bidirectional=True)
+
+    def forward(self, x, adj):
+        h, _ = self.gru(x)
+        h = torch.sum(h, dim=0)
+        return h
+
+class QNetwork(nn.Module):
+    def __init__(self, state_size, action_size):
+        super(QNetwork, self).__init__()
+        self.fc1 = nn.Linear(state_size, 128)
+        self.fc2 = nn.Linear(128, 64)
+        self.fc3 = nn.Linear(64, action_size)
+
+    def forward(self, state):
+        x = torch.relu(self.fc1(state))
+        x = torch.relu(self.fc2(x))
+        return self.fc3(x)
+
+
+class DDQNAgent:
+    def __init__(self, state_size, action_size):
+        self.state_size = state_size
+        self.action_size = action_size #[10,15,20,25,30,35,40] 7
+        self.memory = deque(maxlen=2000)
+        self.gamma = 0.99
+        self.epsilon = 1.0
+        self.epsilon_decay = 0.995
+        self.epsilon_min = 0.01
+        self.learning_rate = 0.001
+        self.q_network = QNetwork(state_size, action_size)
+        self.target_network = QNetwork(state_size, action_size)
+        self.optimizer = optim.Adam(self.q_network.parameters(), lr=self.learning_rate)
+        self.update_target_network()
+        self.now_Duration = 0
+        self.ChangeOrNot = False
+        self.CheckOrNot = False
+        self.state = np.zeros(state_size, dtype=np.float32)
+
+    def update_target_network(self):
+        self.target_network.load_state_dict(self.q_network.state_dict())
+
+    def act(self, state):
+        if np.random.rand() <= self.epsilon:
+            return random.randrange(self.action_size)
+        state = torch.FloatTensor(state).unsqueeze(0)
+        act_values = self.q_network(state)
+        return torch.argmax(act_values, dim=1).item()
+
+    def train(self, batch_size):
+        minibatch = random.sample(self.memory, batch_size)
+
+        for state, action, reward, next_state in minibatch:
+            target = reward
+
+            next_action = torch.argmax(self.q_network(torch.FloatTensor(next_state).unsqueeze(0)), dim=1)
+            target += self.gamma * self.target_network(torch.FloatTensor(next_state).unsqueeze(0))[0][next_action]
+
+            target_f = self.q_network(torch.FloatTensor(state).unsqueeze(0)).detach().clone()
+            target_f[0][action] = target
+
+            self.optimizer.zero_grad()
+            loss = nn.MSELoss()(self.q_network(torch.FloatTensor(state).unsqueeze(0)), target_f)
+            loss.backward()
+            self.optimizer.step()
+
+        if self.epsilon > self.epsilon_min:
+            self.epsilon *= self.epsilon_decay
+
+
+def train_agent(episodes, agent, batch_size=32):
+    for episode in range(episodes):
+
+        state = get_state("intersection_id")
+        total_reward = 0
+
+        while traci.simulation.getMinExpectedNumber() > 0:
+            action = agent.act(state)
+            traci.trafficlight.setPhase("intersection_id", action)
+
+            next_state = get_state("intersection_id")
+            reward = get_reward("intersection_id")
+            done = traci.simulation.getMinExpectedNumber() == 0
+            agent.memory.append((state, action, reward, next_state, done))
+
+            state = next_state
+            total_reward += reward
+
+            if len(agent.memory) > batch_size:
+                agent.train(batch_size)
+
+        agent.update_target_network()
+        print(f"Episode: {episode}, Total Reward: {total_reward}")
+
+
+
+def get_remaining_phase_time(traffic_light_id): #获取信号灯剩余时间
+    # 获取当前仿真时间
+    current_time = traci.simulation.getTime()
+    # 获取下一个信号切换的时间
+    next_switch_time = traci.trafficlight.getNextSwitch(traffic_light_id)
+    # 计算剩余时间
+    remaining_time = next_switch_time - current_time
+    return max(remaining_time, 0)  # 防止负值
+
+
+
+# 启动SUMO仿真
+traci.start(["sumo-gui", "-c", "Traffic_Sim.sumocfg"])
+
+# 仿真循环
+Action_list = [10,15,20,25,30,35,40]
+Intelligent_Sigal_List = ['j20']
+Agent_List = {}
+Least_Check_Time = 5
+step = 0
+
+for Traffic_Signal_id in Intelligent_Sigal_List:
+    Agent_List[Traffic_Signal_id] = DDQNAgent(state_size=4 * 3 * 5 ,action_size=7)
+
+while step < 3600*24:  # 仿真时间，例如1小时
+    traci.simulationStep()  # 每步执行仿真
+    for Traffic_Signal_id in Intelligent_Sigal_List:
+        if traci.trafficlight.getPhase(Traffic_Signal_id) in [0,2] and get_remaining_phase_time(Traffic_Signal_id)<Least_Check_Time and Agent_List[Traffic_Signal_id].CheckOrNot is False:
+            next_state = get_state(Traffic_Signal_id)
+            Agent_List[Traffic_Signal_id].memory.append((state, action, reward, next_state))
+            action = Agent_List[Traffic_Signal_id].act(state)
+            #traci.trafficlight.setPhase(Traffic_Signal_id, Agent_List[action])
+            next_state = get_state("intersection_id")
+            reward = get_reward("intersection_id")
+
+
+            state = next_state
+            total_reward += reward
+
+
+
+
+
+
+    step += 1
+
+traci.close()
