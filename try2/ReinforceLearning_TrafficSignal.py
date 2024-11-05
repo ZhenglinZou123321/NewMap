@@ -198,7 +198,7 @@ traci.start(["sumo-gui", "-c", "Traffic_Sim.sumocfg"])
 
 # 仿真循环
 Action_list = [10,15,20,25,30,35,40]
-Intelligent_Sigal_List = ['j20', 'j19', 'j26', 'j27','j12','j13','j14','j21']
+Intelligent_Sigal_List = ['j5', 'j6', 'j7', 'j10','j11','j12']
 
 Intersection_Edge_Dict = {'j20': {'in': ['j26tj20', 'j21tj20', 'j13tj20', 'j19tj20'], 'out': ['j20tj26', 'j20tj21', 'j20tj13', 'j20tj19']}}
 Agent_List = {}

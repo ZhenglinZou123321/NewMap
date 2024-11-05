@@ -1,0 +1,70 @@
+<city>
+    <general inhabitants="1000" households="300" childrenAgeLimit="19" retirementAgeLimit="66" carRate="0.6" unemploymentRate="0.05"
+                    footDistanceLimit="250" incomingTraffic="3000" outgoingTraffic="3000" />
+    <parameters carPreference="0.50" meanTimePerKmInCity="360" freeTimeActivityRate="0.15" uniformRandomTraffic="0.30" departureVariation="1500" />
+
+    <population>
+        <bracket beginAge="0" endAge="9" peopleNbr="1000" />
+        <bracket beginAge="10" endAge="19" peopleNbr="1000" />
+        <bracket beginAge="20" endAge="29" peopleNbr="1500" />
+        <bracket beginAge="30" endAge="39" peopleNbr="2000" />
+        <bracket beginAge="40" endAge="49" peopleNbr="1500" />
+        <bracket beginAge="50" endAge="59" peopleNbr="1000" />
+        <bracket beginAge="60" endAge="69" peopleNbr="1000" />
+        <bracket beginAge="70" endAge="90" peopleNbr="1000" />
+    </population>
+
+    <workHours>
+        <opening hour="30600" proportion="0.30" />
+        <opening hour="32400" proportion="0.40" />
+        <opening hour="36000" proportion="0.30" />
+        <closing hour="43200" proportion="0.20" />
+        <closing hour="63000" proportion="0.20" />
+        <closing hour="64800" proportion="0.50" />
+        <closing hour="75600" proportion="0.10" />
+    </workHours>
+
+    <streets>
+        <street edge="j5tj6" population="50" workPosition="50"/>
+        <street edge="j6tj5" population="50" workPosition="50"/>
+        <street edge="j7tj6" population="50" workPosition="50"/>
+        <street edge="j6tj7" population="50" workPosition="50"/>
+        <street edge="j10tj5" population="50" workPosition="50"/>
+        <street edge="j5tj10" population="50" workPosition="50"/>
+        <street edge="j11tj10" population="50" workPosition="50"/>
+        <street edge="j10tj11" population="50" workPosition="50"/>
+        <street edge="j6tj11" population="50" workPosition="50"/>
+        <street edge="j11tj6" population="50" workPosition="50"/>
+        <street edge="j11tj12" population="50" workPosition="50"/>
+        <street edge="j12tj11" population="50" workPosition="50"/>
+        <street edge="j7tj12" population="50" workPosition="50"/>
+        <street edge="j12tj7" population="50" workPosition="50"/>
+    </streets>
+
+    <cityGates>
+        <entrance edge="j4tj5" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j5tj4" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j13tj12" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j12tj13" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j9tj10" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j10tj9" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j1tj5" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j5tj1" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j2tj6" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j6tj2" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j3tj7" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j7tj3" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j8tj7" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j7tj8" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j14tj10" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j10tj14" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j15tj11" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j11tj15" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j16tj12" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j12tj16" pos="1" incoming="0" outgoing="0.5" />
+        <entrance edge="j13tj12" pos="1" incoming="0.5" outgoing="0" />
+        <entrance edge="j12tj13" pos="1" incoming="0" outgoing="0.5" />
+    </cityGates>
+
+
+</city>
