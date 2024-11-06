@@ -1,7 +1,7 @@
 <city>
-    <general inhabitants="1000" households="300" childrenAgeLimit="19" retirementAgeLimit="66" carRate="0.6" unemploymentRate="0.05"
-                    footDistanceLimit="250" incomingTraffic="3000" outgoingTraffic="3000" />
-    <parameters carPreference="0.50" meanTimePerKmInCity="360" freeTimeActivityRate="0.15" uniformRandomTraffic="0.30" departureVariation="1500" />
+    <general inhabitants="3000" households="900" childrenAgeLimit="19" retirementAgeLimit="66" carRate="0.6" unemploymentRate="0.05"
+                    footDistanceLimit="250" incomingTraffic="2000" outgoingTraffic="2000" />
+    <parameters carPreference="0.01" meanTimePerKmInCity="360" freeTimeActivityRate="0.15" uniformRandomTraffic="0.30" departureVariation="1500" />
 
     <population>
         <bracket beginAge="0" endAge="9" peopleNbr="1000" />

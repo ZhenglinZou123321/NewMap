@@ -31,15 +31,28 @@ def get_state(intersection_id,Intersection_Edge_Dict):
     state = []
     traffic_signal_dict = {'r':0,'g':1}
     checked_lane = []
+    dentisy_from = 0#不处理右转车道
+    dentisy_to = 0#目标车道的车辆密度
     #for edge in Intersection_Edge_Dict[intersection_id]['in']:
     for (index,lane) in enumerate(traci.trafficlight.getControlledLanes(intersection_id)):
         if lane  in checked_lane:
             continue
         checked_lane.append(lane)
-        num_vehicles = traci.lane.getLastStepVehicleNumber(lane)
-        waiting_time = traci.lane.getWaitingTime(lane)
+        if lane[-1]=='0':#不处理右转车道
+            continue
         current_phase_state = traci.trafficlight.getRedYellowGreenState(intersection_id)
         signal_state = traffic_signal_dict[current_phase_state[index].lower()]
+        if signal_state == 1:
+            vehicle_ids = traci.lane.getLastStepVehicleIDs(lane)
+            vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
+            dentisy_from += vehicle_occupancy_length/traci.lane.getLength(lane)
+            links = traci.lane.getLinks(lane)
+            for link in links:
+                vehicle_ids = traci.lane.getLastStepVehicleIDs(link[0])
+                vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
+                dentisy_to += vehicle_occupancy_length/traci.lane.getLength(link[0])
+        #waiting_time = traci.lane.getWaitingTime(lane)
+
         # 将等待车辆数量和等待时间添加到状态向量
         # 获取车道上所有车辆的 ID 列表
         first_vehicle_delay = 0
@@ -52,14 +65,30 @@ def get_state(intersection_id,Intersection_Edge_Dict):
         except:
             first_vehicle_delay = 0
 
-        state.extend([num_vehicles, waiting_vehicle_count,waiting_time,first_vehicle_delay,signal_state])
+        #state.extend([dentisy_from, dentisy_to])
+    state = [dentisy_from, dentisy_to]
     return np.array(state, dtype=np.float32)
+
+
 
 def get_reward(intersection_id,agent,Action_list):
     reward = 0
-    for lane in set(traci.trafficlight.getControlledLanes(intersection_id)):
-        waiting_time = traci.lane.getWaitingTime(lane)
-        reward -= waiting_time  # 延迟越少，奖励越大
+    checked_lane = []
+    traffic_signal_dict = {'r': 0, 'g': 1}
+    for (index,lane) in enumerate(traci.trafficlight.getControlledLanes(intersection_id)):
+        if lane  in checked_lane:
+            continue
+        checked_lane.append(lane)
+        if lane[-1]=='0':#不处理右转车道
+            continue
+        current_phase_state = traci.trafficlight.getRedYellowGreenState(intersection_id)
+        signal_state = traffic_signal_dict[current_phase_state[index].lower()]
+        if signal_state == 1:
+            waiting_time = 2*traci.lane.getWaitingTime(lane)
+        else:
+            waiting_time = traci.lane.getWaitingTime(lane)
+        reward -= waiting_time
+
     reward -= Action_list[agent.action]
     return reward
 
@@ -95,14 +124,16 @@ class GraphSAGEWithBiGRU(nn.Module):
 class QNetwork(nn.Module):
     def __init__(self, state_size, action_size):
         super(QNetwork, self).__init__()
-        self.fc1 = nn.Linear(state_size, 128)
-        self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, action_size)
+        self.fc1 = nn.Linear(state_size, 256)
+        self.fc2 = nn.Linear(256, 128)
+        self.fc3 = nn.Linear(128, 64)
+        self.fc4 = nn.Linear(64, action_size)
 
     def forward(self, state):
         x = torch.relu(self.fc1(state))
         x = torch.relu(self.fc2(x))
-        return self.fc3(x)
+        x = torch.relu(self.fc3(x))
+        return self.fc4(x)
 
 
 class DDQNAgent:
@@ -199,9 +230,9 @@ def get_remaining_phase_time(traffic_light_id): #获取信号灯剩余时间
 
 
 # 启动SUMO仿真
-traci.start(["sumo-gui", "-c", "Traffic_Sim.sumocfg"])
+traci.start(["sumo-gui", "-c", "Gaussian_trip.sumocfg","--start"])
 
-with open('traffic_data.csv', mode='w', newline='') as file:
+with open('traffic_data_gaussian.csv', mode='w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['time', 'road_id', 'vehicle_count', 'average_speed'])
 
@@ -222,14 +253,15 @@ total_travel_time = 0
 heat_gap = 300
 
 for Traffic_Signal_id in Intelligent_Sigal_List:
-    Agent_List[Traffic_Signal_id] = DDQNAgent(state_size=4 * 3 * 5 ,action_size=7)
+    Agent_List[Traffic_Signal_id] = DDQNAgent(state_size=2 ,action_size=7)
     try:
         Agent_List[Traffic_Signal_id].q_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
         Agent_List[Traffic_Signal_id].target_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
     except:
         pass
 
-while step < 3600*24:  # 仿真时间，例如1小时
+waiting_time_dict={}
+while step < 3600*10:  # 仿真时间，例如1小时
     traci.simulationStep()  # 每步执行仿真
     for Traffic_Signal_id in Intelligent_Sigal_List:
         if traci.trafficlight.getPhase(Traffic_Signal_id) in [0,2] and get_remaining_phase_time(Traffic_Signal_id)<Least_Check_Time and Agent_List[Traffic_Signal_id].CheckOrNot is False:
@@ -257,7 +289,7 @@ while step < 3600*24:  # 仿真时间，例如1小时
                 print(f"Agent: {Traffic_Signal_id} Reward = {Agent_List[Traffic_Signal_id].reward_delta} Trained_time = {Agent_List[Traffic_Signal_id].Trained_time}")
 
     if step%heat_gap == 0:
-        with open('traffic_data.csv', mode='a', newline='') as file:
+        with open('traffic_data_gaussian.csv', mode='a', newline='') as file:
             file.write('\n')
             writer = csv.writer(file)
             for edge_id in traci.edge.getIDList():
@@ -273,41 +305,44 @@ while step < 3600*24:  # 仿真时间，例如1小时
     for vehicle_id in vehicle_ids:
         if vehicle_id not in vehicle_depart_times:
             vehicle_depart_times[vehicle_id] = traci.vehicle.getDeparture(vehicle_id)
+        waiting_time_dict[vehicle_id] = traci.vehicle.getAccumulatedWaitingTime(vehicle_id)
     arrived_vehicle_ids = traci.simulation.getArrivedIDList()
     for vehicle_id in arrived_vehicle_ids:
         if vehicle_id in vehicle_depart_times:
             # 计算该车的总行驶时间
             travel_time = current_time - vehicle_depart_times[vehicle_id]
-            total_travel_time += travel_time
+            #waiting_time = traci.vehicle.getAccumulatedWaitingTime(vehicle_id)
+            total_travel_time += waiting_time_dict[vehicle_id]
             # 从记录中删除该车辆
             del vehicle_depart_times[vehicle_id]
+
 
     step += 1
 
 
 
 try:
-    with open('trained_data.json','r',encoding='utf-8') as file:
+    with open('trained_data_gaussian.json','r',encoding='utf-8') as file:
         trained_data = json.load(file)
     trained_data['times'] = trained_data['times']+1
     trained_data[str(trained_data['times'])] = total_travel_time
-    with open('trained_data.json', 'w', encoding='utf-8') as file:
+    with open('trained_data_gaussian.json', 'w', encoding='utf-8') as file:
         json.dump(trained_data,file,ensure_ascii=False,indent=4)
 except:
     trained_data = {}
     trained_data['times'] = 1
     trained_data[str(trained_data['times'])] = total_travel_time
-    with open('trained_data.json', 'w', encoding='utf-8') as file:
+    with open('trained_data_gaussian.json', 'w', encoding='utf-8') as file:
         json.dump(trained_data,file,ensure_ascii=False,indent=4)
 
 # 加载交通数据，假设数据中包含 'road_id', 'time', 'vehicle_count' 等列
-data = pd.read_csv('traffic_data.csv')
+data = pd.read_csv('traffic_data_gaussian.csv')
 
 # 按道路和时间汇总数据
 pivot_data = data.pivot_table(index='road_id', columns='time', values='vehicle_count', aggfunc='mean')
 
 # 绘制热力图
-plt.figure(figsize=(3600*24/heat_gap, 8))
+plt.figure(figsize=(3600/heat_gap, 8))
 sns.heatmap(pivot_data, cmap="YlOrRd", cbar=True)
 plt.title("Traffic Flow Heatmap")
 plt.xlabel("Time")
