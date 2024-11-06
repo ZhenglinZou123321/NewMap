@@ -27,11 +27,12 @@ def is_incoming_lane(lane_id):
         return True  #有信号灯控制则为驶入路口车道
     return False
 
-def get_state(intersection_id,Intersection_Edge_Dict):
+def get_state(intersection_id,Intersection_Edge_Dict,junc_dict,junc_m):
     state = []
     traffic_signal_dict = {'r':0,'g':1}
     checked_lane = []
-    dentisy_from = 0#不处理右转车道
+    dentisy_self = 0#不处理右转车道
+    dentisy_from = 0
     dentisy_to = 0#目标车道的车辆密度
     #for edge in Intersection_Edge_Dict[intersection_id]['in']:
     for (index,lane) in enumerate(traci.trafficlight.getControlledLanes(intersection_id)):
@@ -45,12 +46,22 @@ def get_state(intersection_id,Intersection_Edge_Dict):
         if signal_state == 1:
             vehicle_ids = traci.lane.getLastStepVehicleIDs(lane)
             vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
-            dentisy_from += vehicle_occupancy_length/traci.lane.getLength(lane)
+            dentisy_self += vehicle_occupancy_length/traci.lane.getLength(lane)
             links = traci.lane.getLinks(lane)
-            for link in links:
-                vehicle_ids = traci.lane.getLastStepVehicleIDs(link[0])
+            lane_index = lane_index_dict[lane]
+            to_list = np.nonzero(junc_m[lane_index])[0] #这个lane要去的lane的索引
+            from_list = np.nonzero(junc_m[:, lane_index])[0]#来这个lane的索引
+
+            for one_lane in to_list:
+                vehicle_ids = traci.lane.getLastStepVehicleIDs(one_lane)
                 vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
-                dentisy_to += vehicle_occupancy_length/traci.lane.getLength(link[0])
+                dentisy_to += vehicle_occupancy_length/traci.lane.getLength(one_lane)
+
+            for one_lane in from_list:
+                vehicle_ids = traci.lane.getLastStepVehicleIDs(one_lane)
+                vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
+                dentisy_from += vehicle_occupancy_length/traci.lane.getLength(one_lane)
+
         #waiting_time = traci.lane.getWaitingTime(lane)
 
         # 将等待车辆数量和等待时间添加到状态向量
@@ -232,6 +243,21 @@ def get_remaining_phase_time(traffic_light_id): #获取信号灯剩余时间
 # 启动SUMO仿真
 traci.start(["sumo-gui", "-c", "Gaussian_trip.sumocfg","--start"])
 
+
+with open("Graph/junction_index.json", "r") as f:
+    junction_index_dict = json.load(f)
+
+with open("Graph/lane_index.json", "r") as f:
+    lane_index_dict = json.load(f)
+
+df = pd.read_csv("Graph/junction_adj_matrix.csv", index_col=0)
+junc_adj_matrix = df.values
+
+df = pd.read_csv("Graph/lane_adj_matrix.csv", index_col=0)
+lane_adj_matrix = df.values
+
+
+
 with open('traffic_data_gaussian.csv', mode='w', newline='') as file:
     writer = csv.writer(file)
     writer.writerow(['time', 'road_id', 'vehicle_count', 'average_speed'])
@@ -265,7 +291,7 @@ while step < 3600*10:  # 仿真时间，例如1小时
     traci.simulationStep()  # 每步执行仿真
     for Traffic_Signal_id in Intelligent_Sigal_List:
         if traci.trafficlight.getPhase(Traffic_Signal_id) in [0,2] and get_remaining_phase_time(Traffic_Signal_id)<Least_Check_Time and Agent_List[Traffic_Signal_id].CheckOrNot is False:
-            next_state = get_state(Traffic_Signal_id,Intersection_Edge_Dict)
+            next_state = get_state(Traffic_Signal_id,Intersection_Edge_Dict,junction_index_dict,junc_adj_matrix)
             reward = get_reward(Traffic_Signal_id,Agent_List[Traffic_Signal_id],Action_list)
             Agent_List[Traffic_Signal_id].memory.append((Agent_List[Traffic_Signal_id].state, Agent_List[Traffic_Signal_id].action, reward, next_state))
             Agent_List[Traffic_Signal_id].step += 1
