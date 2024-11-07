@@ -13,6 +13,21 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
+import re
+def match_strings(str1, str2):
+    # 使用正则表达式将字符串按 "tj" 分成三部分：j开头部分、中间部分、t结尾部分
+    pattern = r'j(\d+)tj(\d+)'
+    match1 = re.match(pattern, str1)
+    match2 = re.match(pattern, str2)
+
+    # 检查是否匹配成功，并且两者的分隔结果相同（忽略顺序）
+    if match1 and match2:
+        part1_1, part2_1 = match1.groups()
+        part1_2, part2_2 = match2.groups()
+        # 比较是否相同
+        return (part1_1 == part2_2 and part2_1 == part1_2) or (part1_1 == part1_2 and part2_1 == part2_2)
+    return False
+
 
 
 def is_incoming_lane(lane_id):
@@ -27,13 +42,47 @@ def is_incoming_lane(lane_id):
         return True  #有信号灯控制则为驶入路口车道
     return False
 
-def get_state(intersection_id,Intersection_Edge_Dict,junc_dict,junc_m):
-    state = []
-    traffic_signal_dict = {'r':0,'g':1}
+def get_remaining_phase_time(traffic_light_id): #获取信号灯剩余时间
+    # 获取当前仿真时间
+    current_time = traci.simulation.getTime()
+    # 获取下一个信号切换的时间
+    next_switch_time = traci.trafficlight.getNextSwitch(traffic_light_id)
+    # 计算剩余时间
+    remaining_time = next_switch_time - current_time
+    return max(remaining_time, 0)  # 防止负值
+
+def get_lane_state(lane_id,lane_dict,lane_m):
+    traffic_signal_dict = {'r':0,'g':1,'y':2}
+    edge_id = traci.lane.getEdgeID(lane_id)
+    to_junction = traci.edge.getToJunction(edge_id)
+    if to_junction in traffic_light_to_lanes.keys():
+        controlled_lanes = traci.trafficlight.getControlledLanes(to_junction)
+        current_phase_state = traci.trafficlight.getRedYellowGreenState(to_junction)
+        lane_index = controlled_lanes.index(lane_id)
+        lane_phase = current_phase_state[lane_index]
+        remain_time = get_remaining_phase_time(to_junction)
+        return traffic_signal_dict[lane_phase.lower()], remain_time
+    else:
+        lane_phase = 'g'
+        remain_time = 99
+
+
+    return traffic_signal_dict[lane_phase],remain_time
+
+def get_state(intersection_id,Intersection_Edge_Dict,lane_index_dict,lane_adj,nowphase_index):
+    reversed_lane_dict = {str(v): k for k, v in lane_index_dict.items()}
+    next_state_of_last = []
+    new_state = []
+    traffic_signal_dict = {'r':0,'g':1,'y':2}
     checked_lane = []
     dentisy_self = 0#不处理右转车道
     dentisy_from = 0
     dentisy_to = 0#目标车道的车辆密度
+    next_green_density_last = []
+    next_green_density_new = []
+    current_phase_state = traci.trafficlight.getRedYellowGreenState(intersection_id)
+    next_phase_state = traci.trafficlight.getCompleteRedYellowGreenDefinition(intersection_id)[0].phases[(nowphase_index + 1) % 8].state
+    next_3_phase_state = traci.trafficlight.getCompleteRedYellowGreenDefinition(intersection_id)[0].phases[(nowphase_index + 3) % 8].state
     #for edge in Intersection_Edge_Dict[intersection_id]['in']:
     for (index,lane) in enumerate(traci.trafficlight.getControlledLanes(intersection_id)):
         if lane  in checked_lane:
@@ -41,66 +90,100 @@ def get_state(intersection_id,Intersection_Edge_Dict,junc_dict,junc_m):
         checked_lane.append(lane)
         if lane[-1]=='0':#不处理右转车道
             continue
-        current_phase_state = traci.trafficlight.getRedYellowGreenState(intersection_id)
-        signal_state = traffic_signal_dict[current_phase_state[index].lower()]
-        if signal_state == 1:
+
+        now_signal_state = traffic_signal_dict[current_phase_state[index].lower()]
+        next_signal_state = traffic_signal_dict[next_phase_state[index].lower()]
+        next_3_signal_state = traffic_signal_dict[next_3_phase_state[index].lower()]
+        if now_signal_state == 2:
             vehicle_ids = traci.lane.getLastStepVehicleIDs(lane)
             vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
-            dentisy_self += vehicle_occupancy_length/traci.lane.getLength(lane)
-            links = traci.lane.getLinks(lane)
+            dentisy_self = vehicle_occupancy_length/traci.lane.getLength(lane) #self占用率
+            #links = traci.lane.getLinks(lane)
             lane_index = lane_index_dict[lane]
-            to_list = np.nonzero(junc_m[lane_index])[0] #这个lane要去的lane的索引
-            from_list = np.nonzero(junc_m[:, lane_index])[0]#来这个lane的索引
-
+            to_list = np.nonzero(lane_adj[lane_index])[0] #这个lane要去的lane的索引
+            from_list = np.nonzero(lane_adj[:, lane_index])[0]#来这个lane的索引
+            next_state_of_last.extend([dentisy_self])
             for one_lane in to_list:
+                if match_strings(reversed_lane_dict[str(one_lane)][:-2],lane[:-2]):
+                    continue
+                one_lane = reversed_lane_dict[str(one_lane)]
                 vehicle_ids = traci.lane.getLastStepVehicleIDs(one_lane)
                 vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
-                dentisy_to += vehicle_occupancy_length/traci.lane.getLength(one_lane)
+                dentisy_to = vehicle_occupancy_length/traci.lane.getLength(one_lane)
+                signal_index,remain_time = get_lane_state(one_lane, lane_index_dict, lane_adj)
+                next_state_of_last.extend([dentisy_to,signal_index,remain_time])
 
+            from_temp = []
             for one_lane in from_list:
+                if match_strings(reversed_lane_dict[str(one_lane)][:-2],lane[:-2]):
+                    continue
+                one_lane = reversed_lane_dict[str(one_lane)]
                 vehicle_ids = traci.lane.getLastStepVehicleIDs(one_lane)
                 vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
-                dentisy_from += vehicle_occupancy_length/traci.lane.getLength(one_lane)
+                dentisy_from = vehicle_occupancy_length/traci.lane.getLength(one_lane)
+                signal_index,remain_time = get_lane_state(one_lane, lane_index_dict, lane_adj)
+                from_temp.extend([dentisy_to, signal_index, remain_time])
+            from_temp += [0] * (3 * 3 - len(from_temp))
+            next_state_of_last.extend(from_temp)
 
-        #waiting_time = traci.lane.getWaitingTime(lane)
-
-        # 将等待车辆数量和等待时间添加到状态向量
-        # 获取车道上所有车辆的 ID 列表
-        first_vehicle_delay = 0
-        waiting_vehicle_count = traci.lane.getLastStepHaltingNumber(lane)
-        try:
+        elif now_signal_state == 0 and next_signal_state == 1:
             vehicle_ids = traci.lane.getLastStepVehicleIDs(lane)
-            # 获取第一辆车的 ID
-            first_vehicle_id = vehicle_ids[0]
-            first_vehicle_delay = traci.vehicle.getWaitingTime(first_vehicle_id)
-        except:
-            first_vehicle_delay = 0
+            vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
+            dentisy_self = vehicle_occupancy_length/traci.lane.getLength(lane) #self占用率
+            #links = traci.lane.getLinks(lane)
+            lane_index = lane_index_dict[lane]
+            to_list = np.nonzero(lane_adj[lane_index])[0] #这个lane要去的lane的索引
+            from_list = np.nonzero(lane_adj[:, lane_index])[0]#来这个lane的索引
+            new_state.extend([dentisy_self])
+            next_green_density_last.append(dentisy_self)
+            for one_lane in to_list:
+                if match_strings(reversed_lane_dict[str(one_lane)][:-2],lane[:-2]):
+                    continue
+                one_lane = reversed_lane_dict[str(one_lane)]
+                vehicle_ids = traci.lane.getLastStepVehicleIDs(one_lane)
+                vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
+                dentisy_to = vehicle_occupancy_length/traci.lane.getLength(one_lane)
+                signal_index,remain_time = get_lane_state(one_lane, lane_index_dict, lane_adj)
+                new_state.extend([dentisy_to,signal_index,remain_time])
 
-        #state.extend([dentisy_from, dentisy_to])
-    state = [dentisy_from, dentisy_to]
-    return np.array(state, dtype=np.float32)
+            from_temp = []
+            for one_lane in from_list:
+                if match_strings(reversed_lane_dict[str(one_lane)][:-2],lane[:-2]):
+                    continue
+                one_lane = reversed_lane_dict[str(one_lane)]
+                vehicle_ids = traci.lane.getLastStepVehicleIDs(one_lane)
+                vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
+                dentisy_from = vehicle_occupancy_length/traci.lane.getLength(one_lane)
+                signal_index,remain_time = get_lane_state(one_lane, lane_index_dict, lane_adj)
+                from_temp.extend([dentisy_to,signal_index,remain_time])
+            from_temp += [0]*(3*3 - len(from_temp))
+            new_state.extend(from_temp)
+
+
+        elif now_signal_state == 0 and next_signal_state == 0 and next_3_signal_state == 1:
+            vehicle_ids = traci.lane.getLastStepVehicleIDs(lane)
+            vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
+            dentisy_self = vehicle_occupancy_length / traci.lane.getLength(lane)  # self占用率
+            next_green_density_new.append(dentisy_self)
+    next_state_of_last.extend(next_green_density_last)
+    new_state.extend(next_green_density_new)
+
+    if len(next_state_of_last) !=40 or len(new_state) != 40:
+        print('wrong')
+
+
+    return np.array(next_state_of_last, dtype=np.float32),np.array(new_state, dtype=np.float32)
 
 
 
-def get_reward(intersection_id,agent,Action_list):
+def get_reward(intersection_id,agent,Action_list,junction_counts):
     reward = 0
     checked_lane = []
-    traffic_signal_dict = {'r': 0, 'g': 1}
-    for (index,lane) in enumerate(traci.trafficlight.getControlledLanes(intersection_id)):
-        if lane  in checked_lane:
-            continue
-        checked_lane.append(lane)
-        if lane[-1]=='0':#不处理右转车道
-            continue
-        current_phase_state = traci.trafficlight.getRedYellowGreenState(intersection_id)
-        signal_state = traffic_signal_dict[current_phase_state[index].lower()]
-        if signal_state == 1:
-            waiting_time = 2*traci.lane.getWaitingTime(lane)
-        else:
-            waiting_time = traci.lane.getWaitingTime(lane)
-        reward -= waiting_time
-
-    reward -= Action_list[agent.action]
+    traffic_signal_dict = {'r': 0, 'g': 1, 'y':2}
+    passed_count = junction_counts[intersection_id] - agent.passed_count
+    passed_vel = passed_count/Action_list[agent.action]
+    agent.passed_count = junction_counts[intersection_id]
+    reward = passed_vel*100
     return reward
 
 
@@ -154,7 +237,7 @@ class DDQNAgent:
         self.memory = deque(maxlen=2000)
         self.gamma = 0.99
         self.epsilon = 1.0
-        self.epsilon_decay = 0.995
+        self.epsilon_decay = 0.99
         self.epsilon_min = 0.01
         self.learning_rate = 0.001
         self.q_network = QNetwork(state_size, action_size)
@@ -170,6 +253,7 @@ class DDQNAgent:
         self.reward_delta = 0
         self.step = 0
         self.Trained_time = 0
+        self.passed_count = 0
 
     def update_target_network(self):
         self.target_network.load_state_dict(self.q_network.state_dict())
@@ -229,20 +313,14 @@ def train_agent(episodes, agent, batch_size=32):
 
 
 
-def get_remaining_phase_time(traffic_light_id): #获取信号灯剩余时间
-    # 获取当前仿真时间
-    current_time = traci.simulation.getTime()
-    # 获取下一个信号切换的时间
-    next_switch_time = traci.trafficlight.getNextSwitch(traffic_light_id)
-    # 计算剩余时间
-    remaining_time = next_switch_time - current_time
-    return max(remaining_time, 0)  # 防止负值
+
 
 
 
 # 启动SUMO仿真
 traci.start(["sumo-gui", "-c", "Gaussian_trip.sumocfg","--start"])
 
+net = sumolib.net.readNet("Map_new.net.xml")  # 替换为您的 .net.xml 文件路径
 
 with open("Graph/junction_index.json", "r") as f:
     junction_index_dict = json.load(f)
@@ -256,7 +334,11 @@ junc_adj_matrix = df.values
 df = pd.read_csv("Graph/lane_adj_matrix.csv", index_col=0)
 lane_adj_matrix = df.values
 
-
+with open("Graph/traffic_light_info.json", "r") as f:
+    data = json.load(f)
+# 获取 lane_to_traffic_light 和 traffic_light_to_lanes 字典
+lane_to_traffic_light = data["lane_to_traffic_light"]
+traffic_light_to_lanes = data["traffic_light_to_lanes"]
 
 with open('traffic_data_gaussian.csv', mode='w', newline='') as file:
     writer = csv.writer(file)
@@ -268,7 +350,7 @@ Intelligent_Sigal_List = ['j5', 'j6', 'j7', 'j10','j11','j12']
 
 Intersection_Edge_Dict = {'j20': {'in': ['j26tj20', 'j21tj20', 'j13tj20', 'j19tj20'], 'out': ['j20tj26', 'j20tj21', 'j20tj13', 'j20tj19']}}
 Agent_List = {}
-Least_Check_Time = 5
+Least_Check_Time = 3
 train_batchsize = 32
 train_gap = 20
 step = 0
@@ -278,8 +360,10 @@ total_travel_time = 0
 
 heat_gap = 300
 
+state_size = 1+3*3+3*3+1+3*3+3*3+2
+
 for Traffic_Signal_id in Intelligent_Sigal_List:
-    Agent_List[Traffic_Signal_id] = DDQNAgent(state_size=2 ,action_size=7)
+    Agent_List[Traffic_Signal_id] = DDQNAgent(state_size=state_size ,action_size=7)
     try:
         Agent_List[Traffic_Signal_id].q_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
         Agent_List[Traffic_Signal_id].target_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
@@ -287,22 +371,45 @@ for Traffic_Signal_id in Intelligent_Sigal_List:
         pass
 
 waiting_time_dict={}
+junction_counts = {k.getID():0 for k in net.getNodes()}  # 用于记录每个 junction 的车辆通过计数
+
+previous_vehicle_edges = {}  # 用于记录每个车辆的上一个 edge
 while step < 3600*10:  # 仿真时间，例如1小时
     traci.simulationStep()  # 每步执行仿真
+    vehicle_ids = traci.vehicle.getIDList()
+    for vehicle_id in vehicle_ids:
+        # 获取车辆当前所在的 edge
+        current_edge = traci.vehicle.getRoadID(vehicle_id)
+        # 如果车辆在网络的有效 edge 上
+        if current_edge and current_edge[0] != ":":
+            # 获取车辆的上一个 edge
+            previous_edge = previous_vehicle_edges.get(vehicle_id)
+            # 检查车辆是否从一个 edge 转移到另一个 edge
+            if previous_edge and previous_edge != current_edge:
+                # 获取 previous_edge 的终点 junction
+                to_junction = net.getEdge(previous_edge).getToNode().getID()
+                # 在 junction_counts 中递增计数
+                if to_junction in junction_counts:
+                    junction_counts[to_junction] += 1
+                else:
+                    junction_counts[to_junction] = 1
+            # 更新车辆的上一个 edge 为当前 edge
+            previous_vehicle_edges[vehicle_id] = current_edge
+
     for Traffic_Signal_id in Intelligent_Sigal_List:
-        if traci.trafficlight.getPhase(Traffic_Signal_id) in [0,2] and get_remaining_phase_time(Traffic_Signal_id)<Least_Check_Time and Agent_List[Traffic_Signal_id].CheckOrNot is False:
-            next_state = get_state(Traffic_Signal_id,Intersection_Edge_Dict,junction_index_dict,junc_adj_matrix)
-            reward = get_reward(Traffic_Signal_id,Agent_List[Traffic_Signal_id],Action_list)
+        if traci.trafficlight.getPhase(Traffic_Signal_id) in [1,3,5,7] and get_remaining_phase_time(Traffic_Signal_id)<Least_Check_Time and Agent_List[Traffic_Signal_id].CheckOrNot is False:
+            next_state,new_state = get_state(Traffic_Signal_id,Intersection_Edge_Dict,lane_index_dict,lane_adj_matrix,traci.trafficlight.getPhase(Traffic_Signal_id))
+            reward = get_reward(Traffic_Signal_id,Agent_List[Traffic_Signal_id],Action_list,junction_counts)
             Agent_List[Traffic_Signal_id].memory.append((Agent_List[Traffic_Signal_id].state, Agent_List[Traffic_Signal_id].action, reward, next_state))
             Agent_List[Traffic_Signal_id].step += 1
             Agent_List[Traffic_Signal_id].action = Agent_List[Traffic_Signal_id].act(next_state)
-            Agent_List[Traffic_Signal_id].state = next_state
+            Agent_List[Traffic_Signal_id].state = new_state
             #traci.trafficlight.setPhase(Traffic_Signal_id, Agent_List[action])
             Agent_List[Traffic_Signal_id].reward_delta = reward
             Agent_List[Traffic_Signal_id].total_reward += reward
             Agent_List[Traffic_Signal_id].CheckOrNot = True
 
-        if traci.trafficlight.getPhase(Traffic_Signal_id) in [0,2] and Agent_List[Traffic_Signal_id].CheckOrNot is True and get_remaining_phase_time(Traffic_Signal_id)>Least_Check_Time:
+        if traci.trafficlight.getPhase(Traffic_Signal_id) in [0,2,4,6] and Agent_List[Traffic_Signal_id].CheckOrNot is True and get_remaining_phase_time(Traffic_Signal_id)>Least_Check_Time:
 
             temp_duration = get_remaining_phase_time(Traffic_Signal_id)
             traci.trafficlight.setPhaseDuration(Traffic_Signal_id, float(Action_list[Agent_List[Traffic_Signal_id].action]))
@@ -312,7 +419,7 @@ while step < 3600*10:  # 仿真时间，例如1小时
                 Agent_List[Traffic_Signal_id].train(train_batchsize)
                 Agent_List[Traffic_Signal_id].update_target_network()
                 torch.save(Agent_List[Traffic_Signal_id].q_network.state_dict(), f'models/{Traffic_Signal_id}_model.pth')
-                print(f"Agent: {Traffic_Signal_id} Reward = {Agent_List[Traffic_Signal_id].reward_delta} Trained_time = {Agent_List[Traffic_Signal_id].Trained_time}")
+                print(f"Agent: {Traffic_Signal_id} Reward = {Agent_List[Traffic_Signal_id].reward_delta} Epsilon = {Agent_List[Traffic_Signal_id].epsilon} Trained_time = {Agent_List[Traffic_Signal_id].Trained_time}")
 
     if step%heat_gap == 0:
         with open('traffic_data_gaussian.csv', mode='a', newline='') as file:
@@ -345,6 +452,15 @@ while step < 3600*10:  # 仿真时间，例如1小时
 
     step += 1
 
+data_total = []
+for Traffic_Signal_id in Intelligent_Sigal_List:
+    data_total.extend(Agent_List[Traffic_Signal_id].memory)
+try:
+    with open(f'Datas/data.json','a') as file:
+        json.dump(data_total,file)
+except:
+    with open(f'Datas/data.json','w') as file:
+        json.dump(data_total,file)
 
 
 try:

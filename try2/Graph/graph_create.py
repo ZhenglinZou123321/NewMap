@@ -69,5 +69,32 @@ df.to_csv("lane_adj_matrix.csv", index=True)
 # 保存字典为 JSON 文件
 with open("lane_index.json", "w") as f:
     json.dump(lane_index, f)
+
+# 创建字典
+lane_to_traffic_light = {}
+traffic_light_to_lanes = {}
+# 获取所有 traffic light ID
+traffic_lights = traci.trafficlight.getIDList()
+# 遍历每个 traffic light，获取它控制的 lanes 并填充两个字典
+for tl_id in traffic_lights:
+    # 获取 traffic light 控制的所有车道
+    controlled_lanes = traci.trafficlight.getControlledLanes(tl_id)
+
+    # 记录到 traffic_light_to_lanes 字典
+    traffic_light_to_lanes[tl_id] = controlled_lanes
+
+    # 将每个 lane 的 traffic light ID 添加到 lane_to_traffic_light 字典
+    for lane_id in controlled_lanes:
+        lane_to_traffic_light[lane_id] = tl_id
+
+# 将两个字典保存到文件
+output_data = {
+    "lane_to_traffic_light": lane_to_traffic_light,
+    "traffic_light_to_lanes": traffic_light_to_lanes
+}
+
+with open("traffic_light_info.json", "w") as f:
+    json.dump(output_data, f, indent=4)
+
 # 关闭仿真
 traci.close()

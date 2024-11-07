@@ -5,7 +5,7 @@ total_hours = 10            # 总仿真时间
 total_seconds = total_hours * 3600
 mean_time = total_seconds / 2  # 高斯分布的均值，5小时为高峰
 std_dev = total_seconds / 6    # 标准差，控制分布的宽度
-num_vehicles = 15000           # 生成的车辆数量
+num_vehicles = 10000           # 生成的车辆数量
 
 # 生成符合高斯分布的出发时间序列
 depart_times = np.random.normal(loc=mean_time, scale=std_dev, size=num_vehicles)
