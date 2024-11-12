@@ -14,6 +14,24 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 import re
+# 合并所有智能体的 memory
+def merge_and_save_memory(agent_list, file_path):
+    merged_memory = []
+
+    for agent in agent_list.values():  # 遍历每个智能体
+        for experience in agent.memory:
+            state, action, reward, next_state = experience
+            merged_memory.append({
+                'state': state.tolist(),  # 将 numpy 数组转换为列表
+                'action': action,
+                'reward': reward,
+                'next_state': next_state.tolist(),  # 将 numpy 数组转换为列表
+            })
+
+    # 保存合并后的 memory 到 JSON 文件
+    with open(file_path, 'a') as file:
+        json.dump(merged_memory, file)
+
 def match_strings(str1, str2):
     # 使用正则表达式将字符串按 "tj" 分成三部分：j开头部分、中间部分、t结尾部分
     pattern = r'j(\d+)tj(\d+)'
@@ -236,7 +254,7 @@ class DDQNAgent:
         self.action_size = action_size #[10,15,20,25,30,35,40] 7
         self.memory = deque(maxlen=2000)
         self.gamma = 0.99
-        self.epsilon = 1.0
+        self.epsilon = 0.5
         self.epsilon_decay = 0.99
         self.epsilon_min = 0.01
         self.learning_rate = 0.001
@@ -345,7 +363,7 @@ with open('traffic_data_gaussian.csv', mode='w', newline='') as file:
     writer.writerow(['time', 'road_id', 'vehicle_count', 'average_speed'])
 
 # 仿真循环
-Action_list = [10,15,20,25,30,35,40]
+Action_list = [10,15,20,25,30,35,40,45,50,55,60,65,70,75,80]
 Intelligent_Sigal_List = ['j5', 'j6', 'j7', 'j10','j11','j12']
 
 Intersection_Edge_Dict = {'j20': {'in': ['j26tj20', 'j21tj20', 'j13tj20', 'j19tj20'], 'out': ['j20tj26', 'j20tj21', 'j20tj13', 'j20tj19']}}
@@ -362,13 +380,24 @@ heat_gap = 300
 
 state_size = 1+3*3+3*3+1+3*3+3*3+2
 
+shared_model = True
+shared_model_location = 'models/agent_model.pth'
+Train_Or_Not = False
 for Traffic_Signal_id in Intelligent_Sigal_List:
-    Agent_List[Traffic_Signal_id] = DDQNAgent(state_size=state_size ,action_size=7)
-    try:
-        Agent_List[Traffic_Signal_id].q_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
-        Agent_List[Traffic_Signal_id].target_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
-    except:
-        pass
+    Agent_List[Traffic_Signal_id] = DDQNAgent(state_size=state_size ,action_size=len(Action_list))
+    if shared_model:
+        try:
+            Agent_List[Traffic_Signal_id].q_network.load_state_dict(torch.load(shared_model_location))
+            Agent_List[Traffic_Signal_id].target_network.load_state_dict(
+                torch.load(shared_model_location))
+        except:
+            pass
+    else:
+        try:
+            Agent_List[Traffic_Signal_id].q_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
+            Agent_List[Traffic_Signal_id].target_network.load_state_dict(torch.load(f'models/{Traffic_Signal_id}_model.pth'))
+        except:
+            pass
 
 waiting_time_dict={}
 junction_counts = {k.getID():0 for k in net.getNodes()}  # 用于记录每个 junction 的车辆通过计数
@@ -415,7 +444,7 @@ while step < 3600*10:  # 仿真时间，例如1小时
             traci.trafficlight.setPhaseDuration(Traffic_Signal_id, float(Action_list[Agent_List[Traffic_Signal_id].action]))
             #print(f"Agent: {Traffic_Signal_id} 原:{temp_duration} 现在:{get_remaining_phase_time(Traffic_Signal_id)} ")
             Agent_List[Traffic_Signal_id].CheckOrNot = False
-            if Agent_List[Traffic_Signal_id].step%train_gap == 0 and Agent_List[Traffic_Signal_id].step>=train_batchsize:
+            if Agent_List[Traffic_Signal_id].step%train_gap == 0 and Agent_List[Traffic_Signal_id].step>=train_batchsize and Train_Or_Not:
                 Agent_List[Traffic_Signal_id].train(train_batchsize)
                 Agent_List[Traffic_Signal_id].update_target_network()
                 torch.save(Agent_List[Traffic_Signal_id].q_network.state_dict(), f'models/{Traffic_Signal_id}_model.pth')
@@ -453,15 +482,7 @@ while step < 3600*10:  # 仿真时间，例如1小时
     step += 1
 
 data_total = []
-for Traffic_Signal_id in Intelligent_Sigal_List:
-    data_total.extend(Agent_List[Traffic_Signal_id].memory)
-try:
-    with open(f'Datas/data.json','a') as file:
-        json.dump(data_total,file)
-except:
-    with open(f'Datas/data.json','w') as file:
-        json.dump(data_total,file)
-
+merge_and_save_memory(Agent_List, 'Datas/data.json')
 
 try:
     with open('trained_data_gaussian.json','r',encoding='utf-8') as file:
@@ -493,3 +514,5 @@ plt.show()
 
 
 traci.close()
+
+
