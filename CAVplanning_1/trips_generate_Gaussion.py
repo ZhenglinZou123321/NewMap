@@ -1,17 +1,20 @@
 import numpy as np
 
+
 # 配置参数
 total_hours = 3            # 总仿真时间
 total_seconds = total_hours * 3600
 mean_time = total_seconds / 2  # 高斯分布的均值，5小时为高峰
-std_dev = total_seconds / 6    # 标准差，控制分布的宽度
+std_dev = total_seconds / 10    # 标准差，控制分布的宽度
 num_vehicles = 100          # 生成的车辆数量
 Permeability = 0.3
+
 
 # 生成符合高斯分布的出发时间序列
 depart_times = np.random.normal(loc=mean_time, scale=std_dev, size=num_vehicles)
 depart_times = np.clip(depart_times, 0, total_seconds)  # 将出发时间限制在 [0, total_seconds] 范围内
 depart_times = np.sort(depart_times)  # 排序出发时间
+
 
 # 定义出发和到达边
 entry_edges = ['j2tj3','j5tj3','j6tj4','j8tj1']    # 替换为实际的入口边

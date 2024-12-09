@@ -11,13 +11,16 @@ from scipy.optimize import minimize
 import math
 import re
 
+
 # SUMO 仿真配置
 SUMO_BINARY = "sumo-gui"  # 使用 sumo-gui 以便可视化
 CONFIG_FILE = "Gaussian_trip.sumocfg"  # 仿真配置文件路径
 
+
 # 启动 SUMO 仿真
 def start_sumo():
     traci.start([SUMO_BINARY, "-c", CONFIG_FILE])
+
 
 # 车辆参数
 MAX_SPEED = 13.89  # 最大速度 (m/s)
@@ -26,6 +29,7 @@ REACTION_TIME = 1.0  # 反应时间 (s)
 
 # IDM模型的参数
 params = {
+
     'v_0': MAX_SPEED,  # 期望速度30 m/s
     'delta': 4,  # 加速因子
     's_0': 2,  # 最小跟车距离
@@ -36,6 +40,7 @@ params = {
     #下面两个参数是要进行计算的
     'v_lead': 18.0,  # 前车速度（假设为18 m/s）
     's': 50  # 当前车辆与前车的距离（假设为50米）
+
 }
 
 # 信号灯周期和时间参数
@@ -48,16 +53,18 @@ vehicles = []
 
 
 def get_remaining_phase_and_time(lane_id): #获取信号灯当前相位和剩余时间
-    match = re.match(r"([A-Za-z]+)2([A-Za-z]+)_([A-Za-z]+)", lane_id)
+    pattern = r"^(.*2)t(.*)_(.*)$"
+    match = re.match(pattern, lane_id)
     intersection_id = match.group(2)
     # 获取当前仿真时间
     current_time = traci.simulation.getTime()
     # 获取下一个信号切换的时间
     next_switch_time = traci.trafficlight.getNextSwitch(intersection_id)
-    # 计算剩余时间
+    # 计算剩余时间 秒
     remaining_time = next_switch_time - current_time
     current_phase = traci.trafficlight.getRedYellowGreenState(intersection_id)[traci.trafficlight.getControlledLanes(intersection_id).index(lane_id)]
-    return max(remaining_time, 0)  # 防止负值
+    return current_phase.lower(),max(remaining_time, 0)  # 防止负值
+
 
 #获取刚刚离开某条lane的车辆
 def get_vehicles_just_left(lane_previous_vehicles):
@@ -103,8 +110,8 @@ def get_all_edge_vehicles_and_last_quarter():
         last_quarter_vehicles[edgeID] = {}
 
         # 获取路段上的所有车道
-        lane_ids = traci.edge.getLaneIDs(edgeID)
-
+        #lane_ids = traci.edge.getLanes(edgeID)
+        lane_ids = [f"{edgeID}_{i}" for i in range(traci.edge.getLaneNumber(edgeID))]
         for laneID in lane_ids:
             # 获取当前车道上的车辆
             vehicles_on_lane = traci.lane.getLastStepVehicleIDs(laneID)
@@ -211,33 +218,62 @@ def objective(control, state, target, weights, dt, N,type_info):
     return total_cost
 
 # 约束条件
-def constraints(control, state, dt, N, vmin, vmax, amin, amax, safety_distance,type_info,now_lane,lane_towards):
+def constraints(control, state, dt, N, vmin, vmax, amin, amax,type_info,now_lane,lane_towards):
     """
     定义优化问题的约束
     """
     constraints = []
     type_list = type_info[0]
-    num_CAV = type_list[1]
-    num_HDV = type_list[2]
+    current_phase,remaining_time = get_remaining_phase_and_time(now_lane)
+    lane_length = traci.lane.getLength(now_lane)
+    state_houche = []
     for t in range(N):
+        remaining_time = remaining_time - t*dt
+        if remaining_time<=0:
+            if current_phase == 'r':
+                current_phase = 'g'
+                remaining_time = 10
+            elif current_phase == 'g':
+                current_phase = 'y'
+                remaining_time = 3
+            elif current_phase == 'y':
+                current_phase = 'r'
+                remaining_time = 10
+
         for i in range(len(type_list)):
             if type_list[i] == 'CAV':
-                state = vehicle_dynamics(state, control[t], dt,type_car=type_list[i],params=params)
+                state[i] = vehicle_dynamics(state[i], control[t * len(type_list) + i], dt,type_car=type_list[i],params=params)
                 # 添加速度限制
-                constraints.append({'type': 'ineq', 'fun': lambda c: vmax - state[1]})
-                constraints.append({'type': 'ineq', 'fun': lambda c: state[1] - vmin})
+                constraints.append({'type': 'ineq', 'fun': lambda c: vmax - state[i][1]})
+                constraints.append({'type': 'ineq', 'fun': lambda c: state[i][1] - vmin})
                 # 添加加速度限制
                 constraints.append({'type': 'ineq', 'fun': lambda c: amax - control[t]})
-                constraints.append({'type': 'ineq', 'fun': lambda c: control[t] - amin})
+                constraints.append({'type': 'ineq', 'fun': lambda c: control[t * len(type_list) + i] - amin})
                 # 添加安全距离限制
                 if t > 0:
-                    if i == len(type_list)-1:
+                    if (current_phase == 'r' or current_phase == 'y') and state[i][0] < lane_length:
+                        constraints.append({'type': 'ineq', 'fun': lambda c: lane_length - state[i][0]})
+                    if i > 0:
+                        if type_list[i-1] == 'CAV':
+                            safety_distance = 2
+                            constraints.append({'type': 'ineq', 'fun': lambda c: state[i][0] - state_houche[0] - safety_distance})
                         '''if len(just_left_vehicles[now_lane]) !=0 and just_left_vehicles[now_lane][0] in edge_vehicles[lane_towards[:-2]][lane_towards]:
                             state_qianche = vehicle_dynamics(state, control[t], dt, type_car='HDV', params=params)
                             constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})'''
-
+                state_houche = state
+            elif type_list[i] == 'HDV':
+                state[i] = vehicle_dynamics(state[i], 0, dt,type_car=type_list[i],params=params)
+                if t > 0:
+                    if i > 0:
+                        if type_list[i-1] == 'CAV':
+                            safety_distance = 2
+                            constraints.append({'type': 'ineq', 'fun': lambda c: state[i][0]-state_houche[0]-safety_distance})
+                        '''if len(just_left_vehicles[now_lane]) !=0 and just_left_vehicles[now_lane][0] in edge_vehicles[lane_towards[:-2]][lane_towards]:
+                            state_qianche = vehicle_dynamics(state, control[t], dt, type_car='HDV', params=params)
+                            constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})'''
+                state_houche = state[i]
                     #edge_vehicles[lane_towards[:-2]][lane_towards]
-                    constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})
+                    #constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})
     return constraints
 
 # MPC主循环
@@ -252,16 +288,15 @@ def mpc_control(initial_state, target_state, weights, N, dt, bounds,type_info,no
     :param bounds: 控制变量的上下限
     """
     type_list = type_info[0]
-    num_CAV = type_list[1]
-    num_HDV = type_list[2]
+
     # 初始猜测
     u0 = np.zeros(N*len(type_list))  # 初始控制序列
     # 约束
-    cons = constraints(u0, initial_state, dt, N, *bounds,type_info,now_lane,lane_towards)
+    cons = constraints(u0, initial_state, dt, N, bounds[2],bounds[3],bounds[0],bounds[1],type_info,now_lane,lane_towards)
     # 优化求解
     result = minimize(
         objective, u0, args=(initial_state, target_state, weights, dt, N,type_info),
-        constraints=cons, method='SLSQP', bounds=[bounds] * N
+        constraints=cons, method='SLSQP', bounds=[-3.0,MAX_ACCEL] *(N * len(type_list))
     )
     return result.x  # 返回最优控制序列
 
