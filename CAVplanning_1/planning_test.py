@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import csv
 from scipy.optimize import minimize
 import math
+import re
 
 # SUMO 仿真配置
 SUMO_BINARY = "sumo-gui"  # 使用 sumo-gui 以便可视化
@@ -46,6 +47,42 @@ CYCLE_TIME = GREEN_TIME + RED_TIME
 vehicles = []
 
 
+def get_remaining_phase_and_time(lane_id): #获取信号灯当前相位和剩余时间
+    match = re.match(r"([A-Za-z]+)2([A-Za-z]+)_([A-Za-z]+)", lane_id)
+    intersection_id = match.group(2)
+    # 获取当前仿真时间
+    current_time = traci.simulation.getTime()
+    # 获取下一个信号切换的时间
+    next_switch_time = traci.trafficlight.getNextSwitch(intersection_id)
+    # 计算剩余时间
+    remaining_time = next_switch_time - current_time
+    current_phase = traci.trafficlight.getRedYellowGreenState(intersection_id)[traci.trafficlight.getControlledLanes(intersection_id).index(lane_id)]
+    return max(remaining_time, 0)  # 防止负值
+
+#获取刚刚离开某条lane的车辆
+def get_vehicles_just_left(lane_previous_vehicles):
+    """
+    获取所有车道中刚刚离开车道的车辆 ID
+    :param lane_previous_vehicles: 上一时刻每条车道的车辆列表字典
+    :return: dict {laneID: [vehicleID, ...]}
+    """
+    just_left_vehicles = {}
+    current_lane_vehicles = {}  # 记录当前时刻每条车道的车辆
+
+    # 获取所有车道 ID
+    lane_ids = traci.lane.getIDList()
+
+    for laneID in lane_ids:
+        # 获取当前车道的车辆列表
+        current_vehicles = set(traci.lane.getLastStepVehicleIDs(laneID))
+        current_lane_vehicles[laneID] = current_vehicles
+
+        # 计算刚刚离开车道的车辆
+        previous_vehicles = lane_previous_vehicles.get(laneID, set())
+        just_left = previous_vehicles - current_vehicles
+        just_left_vehicles[laneID] = list(just_left)
+
+    return just_left_vehicles, current_lane_vehicles
 
 #得到每条edge上的车辆列表以及后1/4的车辆列表
 def get_all_edge_vehicles_and_last_quarter():
@@ -85,7 +122,7 @@ def get_all_edge_vehicles_and_last_quarter():
 
     return edge_vehicles, last_quarter_vehicles
 
-# 在检查交叉口相关车道上的车辆信息
+'''# 在检查交叉口相关车道上的车辆信息
 def get_vehicles_in_range(intersection_id, traffic_light_to_lanes):
 
     #vehicle_ids = traci.vehicle.getIDList()
@@ -97,7 +134,7 @@ def get_vehicles_in_range(intersection_id, traffic_light_to_lanes):
 
 
             in_range_vehicles.append(vid)
-    return in_range_vehicles
+    return in_range_vehicles'''
 
 # 车辆动力学模型
 def vehicle_dynamics(state, control, dt,type_car,params=None):
@@ -174,7 +211,7 @@ def objective(control, state, target, weights, dt, N,type_info):
     return total_cost
 
 # 约束条件
-def constraints(control, state, dt, N, vmin, vmax, amin, amax, safety_distance,type_info,lane_towards):
+def constraints(control, state, dt, N, vmin, vmax, amin, amax, safety_distance,type_info,now_lane,lane_towards):
     """
     定义优化问题的约束
     """
@@ -194,12 +231,17 @@ def constraints(control, state, dt, N, vmin, vmax, amin, amax, safety_distance,t
                 constraints.append({'type': 'ineq', 'fun': lambda c: control[t] - amin})
                 # 添加安全距离限制
                 if t > 0:
+                    if i == len(type_list)-1:
+                        '''if len(just_left_vehicles[now_lane]) !=0 and just_left_vehicles[now_lane][0] in edge_vehicles[lane_towards[:-2]][lane_towards]:
+                            state_qianche = vehicle_dynamics(state, control[t], dt, type_car='HDV', params=params)
+                            constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})'''
 
+                    #edge_vehicles[lane_towards[:-2]][lane_towards]
                     constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})
     return constraints
 
 # MPC主循环
-def mpc_control(initial_state, target_state, weights, N, dt, bounds,type_info,lane_towards):
+def mpc_control(initial_state, target_state, weights, N, dt, bounds,type_info,now_lane,lane_towards):
     """
     基于MPC优化得到最优控制序列
     :param initial_state: 初始状态 [位置, 速度]
@@ -215,7 +257,7 @@ def mpc_control(initial_state, target_state, weights, N, dt, bounds,type_info,la
     # 初始猜测
     u0 = np.zeros(N*len(type_list))  # 初始控制序列
     # 约束
-    cons = constraints(u0, initial_state, dt, N, *bounds,type_info,lane_towards)
+    cons = constraints(u0, initial_state, dt, N, *bounds,type_info,now_lane,lane_towards)
     # 优化求解
     result = minimize(
         objective, u0, args=(initial_state, target_state, weights, dt, N,type_info),
@@ -253,7 +295,7 @@ def update_cav_speeds(intersection_id,traffic_light_to_lanes):
         if len(initial_state) != 0:
             type_info = (type_list,num_CAV,num_HDV)
             initial_state = np.array(initial_state)
-            mpc_control(initial_state, 0, weights=[1.0,0.5], N=10, dt=0.2, bounds=(-3.0,MAX_ACCEL,0,MAX_SPEED),type_info=type_info,lane_towards = lane_towards)
+            mpc_control(initial_state, 0, weights=[1.0,0.5], N=10, dt=0.2, bounds=(-3.0,MAX_ACCEL,0,MAX_SPEED),type_info=type_info,now_lane = lane_id,lane_towards = lane_towards)
 
 
 def record_data(step):
@@ -271,6 +313,7 @@ def record_data(step):
 
 edge_vehicles = {}
 last_quarter_vehicles = {}
+lane_previous_vehicles = {}  # 用于存储每条车道上一时刻的车辆
 
 if __name__ == "__main__":
     start_sumo()
@@ -302,6 +345,9 @@ if __name__ == "__main__":
     while step < 3600:  # 仿真 1 小时
         traci.simulationStep()  # 仿真步进
         edge_vehicles, last_quarter_vehicles = get_all_edge_vehicles_and_last_quarter()
+
+        # 获取刚刚离开每个车道的车辆
+        just_left_vehicles, lane_previous_vehicles = get_vehicles_just_left(lane_previous_vehicles)
 
         update_cav_speeds('j3',traffic_light_to_lanes)  # 更新 CAV 的速度控制
         record_data(step)  # 记录数据
