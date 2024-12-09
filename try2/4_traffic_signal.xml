@@ -29,6 +29,16 @@
 -->
 
 <additional xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/additional_file.xsd">
+        <tlLogic id="j3" type="static" programID="0" offset="0">
+        <phase duration="30" state="GGGGGGrrrrgggrrrrrrrGGGGGGrrrrgggrrrrrrr"/>
+        <phase duration="3"  state="GGGyyyrrrrgggrrrrrrrGGGyyyrrrrgggrrrrrrr"/>
+        <phase duration="30" state="GGGrrrgggggggrrrrrrrGGGrrrgggggggrrrrrrr"/>
+        <phase duration="3"  state="GGGrrryyyygggrrrrrrrGGGrrryyyygggrrrrrrr"/>
+        <phase duration="30" state="GGGrrrrrrrggggggrrrrGGGrrrrrrrggggggrrrr"/>
+        <phase duration="3"  state="GGGrrrrrrrgggyyyrrrrGGGrrrrrrrgggyyyrrrr"/>
+        <phase duration="30" state="GGGrrrrrrrgggrrrggggGGGrrrrrrrgggrrrgggg"/>
+        <phase duration="3"  state="GGGrrrrrrrgggrrryyyyGGGrrrrrrrgggrrryyyy"/>
+    </tlLogic>
     <tlLogic id="j5" type="static" programID="0" offset="0">
         <phase duration="30" state="GGGGGGrrrrgggrrrrrrrGGGGGGrrrrgggrrrrrrr"/>
         <phase duration="3"  state="GGGyyyrrrrgggrrrrrrrGGGyyyrrrrgggrrrrrrr"/>
