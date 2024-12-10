@@ -5,8 +5,8 @@ import numpy as np
 total_hours = 3            # 总仿真时间
 total_seconds = total_hours * 3600
 mean_time = total_seconds / 2  # 高斯分布的均值，5小时为高峰
-std_dev = total_seconds / 10    # 标准差，控制分布的宽度
-num_vehicles = 100          # 生成的车辆数量
+std_dev = total_seconds / 3    # 标准差，控制分布的宽度
+num_vehicles = 400          # 生成的车辆数量
 Permeability = 0.3
 
 

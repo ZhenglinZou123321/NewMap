@@ -10,6 +10,26 @@ import csv
 from scipy.optimize import minimize
 import math
 import re
+import threading
+import queue
+import time
+
+def update_cav_control_thread_func(traffic_light_to_lanes, lane_previous_vehicles, control_signal, last_quarter_vehicles):
+    ''' 这个函数在独立线程中运行，负责周期性地更新CAV车辆的速度控制
+    :param traffic_light_to_lanes:
+    :param lane_previous_vehicles:
+    :param control_signal:
+    :param last_quarter_vehicles:
+    :return:
+    '''
+    while 1:
+        if step%5==0:
+            #global last_quarter_vehicles
+            edge_vehicles, last_quarter_vehicles = get_all_edge_vehicles_and_last_quarter()
+            print(last_quarter_vehicles)
+            # 获取刚刚离开每个车道的车辆
+            just_left_vehicles, lane_previous_vehicles = get_vehicles_just_left(lane_previous_vehicles)
+            update_cav_speeds('j3', traffic_light_to_lanes)  # 更新 CAV 的速度控制
 
 
 # SUMO 仿真配置
@@ -47,15 +67,29 @@ params = {
 GREEN_TIME = 30  # 绿灯时间
 RED_TIME = 30  # 红灯时间
 CYCLE_TIME = GREEN_TIME + RED_TIME
-
+dt = 0.2
 # 初始化交叉口车辆列表
 vehicles = []
 
+class control_info:
+    def __init__(self,vehicle_id):
+        self.vehicle_id = vehicle_id
+        self.time_when_cal = 0
+        self.control_list = []
+    def set_time(self,time):
+        self.time_when_cal = time
+    def control_list_clear(self):
+        self.control_list = []
+    def control_list_append(self,control_signal):
+        self.control_list.append(control_signal)
+    def control_signal(self,time,dt):
+        return self.control_list[int((time-self.time_when_cal)/dt)]
+
 
 def get_remaining_phase_and_time(lane_id): #获取信号灯当前相位和剩余时间
-    pattern = r"^(.*2)t(.*)_(.*)$"
-    match = re.match(pattern, lane_id)
-    intersection_id = match.group(2)
+    # 按照固定字符进行分割
+    x, rest = lane_id.split("t", 1)  # 分割出 X 和剩余部分
+    intersection_id, z = rest.split("_", 1)  # 分割出 Y 和 Z
     # 获取当前仿真时间
     current_time = traci.simulation.getTime()
     # 获取下一个信号切换的时间
@@ -169,6 +203,7 @@ def vehicle_dynamics(state, control, dt,type_car,params=None):
         # 计算当前车辆与前车之间的相对速度
         v_lead = params['v_lead']  # 前车速度（由环境或前车状态提供）
         s = params['s']  # 当前车辆与前车之间的距离
+
         delta_v = v_lead - velocity
         # 计算IDM模型的加速度
         s_star = s_0 + velocity * T_g + (velocity * delta_v) / (2 * np.sqrt(a_max * b))
@@ -193,8 +228,7 @@ def objective(control, state, target, weights, dt, N,type_info):
     w_distance, w_energy = weights
     total_cost = 0
     type_list = type_info[0]
-    num_CAV = type_list[1]
-    num_HDV = type_list[2]
+
     for t in range(N):
         for i in range(len(type_list)):
             if type_list[i] == 'CAV':
@@ -204,15 +238,17 @@ def objective(control, state, target, weights, dt, N,type_info):
                 energy_cost = w_energy * control[t]**2  # 能耗最小化
                 total_cost += distance_cost + energy_cost
             elif type_list[i] == 'HDV':
-                if i != 0:
-                    params['v_lead']= state[i-1][1]
-                    params['s'] = state[i-1][0] - state[i][0]
+                if i != len(type_list)-1:
+                    params['v_lead'] = state[i + 1][1]
+                    params['s'] = state[i + 1][0] - state[i][0]
                 else:
                     params['v_lead'] = MAX_SPEED
-                    params['s'] = state[i-1][0] - state[i][0]
+                    params['s'] = 10
 
-                state[i] = vehicle_dynamics(state[i], control[t * len(type_list) + i], dt, type_car=type_list[i],
+
+                state[i] = vehicle_dynamics(state[i], 0, dt, type_car=type_list[i],
                                             params=params)
+                distance_cost = -w_distance * state[i][0]  # 行驶距离最大化
                 distance_cost = -w_distance * state[i][0]  # 行驶距离最大化
                 total_cost += distance_cost
     return total_cost
@@ -262,6 +298,12 @@ def constraints(control, state, dt, N, vmin, vmax, amin, amax,type_info,now_lane
                             constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})'''
                 state_houche = state
             elif type_list[i] == 'HDV':
+                if i != len(type_list)-1:
+                    params['v_lead'] = state[i + 1][1]
+                    params['s'] = state[i + 1][0] - state[i][0]
+                else:
+                    params['v_lead'] = MAX_SPEED
+                    params['s'] = 10
                 state[i] = vehicle_dynamics(state[i], 0, dt,type_car=type_list[i],params=params)
                 if t > 0:
                     if i > 0:
@@ -292,12 +334,17 @@ def mpc_control(initial_state, target_state, weights, N, dt, bounds,type_info,no
     # 初始猜测
     u0 = np.zeros(N*len(type_list))  # 初始控制序列
     # 约束
-    cons = constraints(u0, initial_state, dt, N, bounds[2],bounds[3],bounds[0],bounds[1],type_info,now_lane,lane_towards)
+    cons = constraints(u0, initial_state.copy(), dt, N, bounds[2],bounds[3],bounds[0],bounds[1],type_info,now_lane,lane_towards)
     # 优化求解
     result = minimize(
-        objective, u0, args=(initial_state, target_state, weights, dt, N,type_info),
-        constraints=cons, method='SLSQP', bounds=[-3.0,MAX_ACCEL] *(N * len(type_list))
+        objective, u0, args=(initial_state.copy(), target_state, weights, dt, N,type_info),
+        constraints=cons, method='SLSQP', bounds=[(-3.0, MAX_ACCEL)] * (N * len(type_list))
     )
+    i = 0
+    while i < N*len(type_list):
+        for vehicle in last_quarter_vehicles[now_lane[:-2]][now_lane]:
+            control_signal[vehicle].control_list_append(result.x[i])
+            i += 1
     return result.x  # 返回最优控制序列
 
 
@@ -305,17 +352,26 @@ def mpc_control(initial_state, target_state, weights, N, dt, bounds,type_info,no
 
 # 更新 CAV 速度控制
 def update_cav_speeds(intersection_id,traffic_light_to_lanes):
+    start_time = time.time()
     #in_range_vehicles = get_vehicles_in_range("j3")
     #in_range_vehicles = get_vehicles_in_range(intersection_id,traffic_light_to_lanes)
     #in_range_vehicles_lanes = last_quarter_vehicles[intersection_id]
-    num_CAV = 0
-    num_HDV = 0
-    initial_state = []  #最后要转换为np.array() [位置,速度]
-    type_list = []
+    now_time = traci.simulation.getTime()
     for lane_id in traffic_light_to_lanes[intersection_id]:
+        num_CAV = 0
+        num_HDV = 0
+        initial_state = []  # 最后要转换为np.array() [位置,速度]
+        type_list = []
         for temp in [i for i, value in enumerate(lane_adj_matrix[lane_index_dict[lane_id]]) if value != 0]:
             lane_towards = index_lane_dict[temp]
+        #print(lane_id)
+        print(last_quarter_vehicles)
         for vehicle_id in last_quarter_vehicles[lane_id[:-2]][lane_id]:
+            print('1')
+            if vehicle_id not in control_signal.keys():
+                control_signal[vehicle_id] = control_info(vehicle_id)
+            control_signal[vehicle_id].set_time(now_time)
+            control_signal[vehicle_id].control_list_clear()
             if vehicle_id[0:3] == "CAV":
                 num_CAV +=1
                 type_list.append('CAV')
@@ -328,10 +384,13 @@ def update_cav_speeds(intersection_id,traffic_light_to_lanes):
                 #optimized_speed, optimized_accel = optimize_speed(vehicle_id, target_speed, MAX_SPEED, MAX_ACCEL, REACTION_TIME)
             initial_state.append(state)
         if len(initial_state) != 0:
+            print('2')
             type_info = (type_list,num_CAV,num_HDV)
             initial_state = np.array(initial_state)
-            mpc_control(initial_state, 0, weights=[1.0,0.5], N=10, dt=0.2, bounds=(-3.0,MAX_ACCEL,0,MAX_SPEED),type_info=type_info,now_lane = lane_id,lane_towards = lane_towards)
-
+            mpc_control(initial_state, 0, weights=[1.0,0.5], N=50, dt=dt, bounds=(-3.0,MAX_ACCEL,0,MAX_SPEED),type_info=type_info,now_lane = lane_id,lane_towards = lane_towards)
+    end_time = time.time()
+    elapsed_time = end_time - start_time
+    print(f"计算耗时: {elapsed_time:.4f} 秒")
 
 def record_data(step):
     with open("traffic_data.csv", mode="a", newline="") as file:
@@ -349,7 +408,8 @@ def record_data(step):
 edge_vehicles = {}
 last_quarter_vehicles = {}
 lane_previous_vehicles = {}  # 用于存储每条车道上一时刻的车辆
-
+control_signal = {}
+step = 0
 if __name__ == "__main__":
     start_sumo()
     # 读取SUMO网络
@@ -374,17 +434,30 @@ if __name__ == "__main__":
     lane_to_traffic_light = data["lane_to_traffic_light"]
     traffic_light_to_lanes = data["traffic_light_to_lanes"]
 
+    # 创建并启动后台线程来更新 CAV 速度
+    update_thread = threading.Thread(target=update_cav_control_thread_func, args=(traffic_light_to_lanes, lane_previous_vehicles, control_signal, last_quarter_vehicles))
+    update_thread.daemon = True  # 设置为守护线程，确保程序退出时自动关闭
+    update_thread.start()
 
+    Sampling_T = 5
+    t_tick = 0
 
-    step = 0
-    while step < 3600:  # 仿真 1 小时
+    while step < 3600*3:  # 仿真 3 小时
         traci.simulationStep()  # 仿真步进
-        edge_vehicles, last_quarter_vehicles = get_all_edge_vehicles_and_last_quarter()
+        time_now = traci.simulation.getTime()
+        vehicles_list = traci.vehicle.getIDList()
+        for vehicle_id in vehicles_list:
+            if vehicle_id not in control_signal.keys():
+                continue
+            try:
+                traci.vehicle.setAcceleration(vehicle_id,control_signal[vehicle_id].control_signal(time_now,dt),dt)
+            except:
+                pass
 
-        # 获取刚刚离开每个车道的车辆
-        just_left_vehicles, lane_previous_vehicles = get_vehicles_just_left(lane_previous_vehicles)
 
-        update_cav_speeds('j3',traffic_light_to_lanes)  # 更新 CAV 的速度控制
+
+            #update_cav_speeds('j3',traffic_light_to_lanes)  # 更新 CAV 的速度控制
+
         record_data(step)  # 记录数据
         step += 1
 
