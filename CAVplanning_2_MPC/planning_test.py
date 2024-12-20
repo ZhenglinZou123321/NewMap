@@ -46,9 +46,9 @@ def start_sumo():
 
 
 # 车辆参数
-MAX_SPEED = 13.89  # 最大速度 (m/s)
+MAX_SPEED = 15  # 最大速度 (m/s)
 MIN_SPEED = 0
-MAX_ACCEL = 2.6  # 最大加速度 (m/s^2)
+MAX_ACCEL = 10  # 最大加速度 (m/s^2)
 MIN_ACCEL = -10
 REACTION_TIME = 1.0  # 反应时间 (s)
 
@@ -73,8 +73,8 @@ GREEN_TIME = 30  # 绿灯时间
 RED_TIME = 30  # 红灯时间
 CYCLE_TIME = GREEN_TIME + RED_TIME
 dt = 0.2
-N=10
-L_safe = 1
+N=40
+L_safe = 2
 # 初始化交叉口车辆列表
 vehicles = []
 
@@ -170,7 +170,7 @@ def get_all_edge_vehicles_and_last_quarter():
             # 筛选后四分之一段的车辆
             vehicles_in_last_quarter = [
                 vehID for vehID in vehicles_on_lane
-                if traci.vehicle.getLanePosition(vehID) > 0.75 * lane_length
+                if traci.vehicle.getLanePosition(vehID) > 0.5 * lane_length
             ]
             last_quarter_vehicles[edgeID][laneID] = vehicles_in_last_quarter #idx=0的车是最靠近lane终点的，以此类推
 
@@ -189,192 +189,6 @@ def get_vehicles_in_range(intersection_id, traffic_light_to_lanes):
 
             in_range_vehicles.append(vid)
     return in_range_vehicles'''
-
-# 车辆动力学模型
-def vehicle_dynamics(state, control, dt,type_car,params=None):
-    """
-    计算所有车辆下一时刻的状态
-    HDV以IDM模型预测
-    :param state: 当前状态 [位置, 速度]
-    :param control: 当前加速度
-    :param dt: 时间步长
-    :return: 下一时刻状态
-    """
-    position, velocity = state
-    if type_car == 'CAV':
-        acceleration = control
-        next_position = position + velocity * dt + 0.5 * acceleration * dt**2
-        next_velocity = velocity + acceleration * dt
-    elif type_car == 'HDV':
-        # 对于HDV，使用IDM模型计算加速度
-        v_0 = params['v_0']  # 期望速度（目标速度）
-        delta = params['delta']  # 加速因子
-        s_0 = params['s_0']  # 最小跟车距离
-        T_g = params['T_g']  # 期望时间跟车距离
-        a_max = params['a_max']  # 最大加速度
-        b = params['b']  # 最大减速度
-        # 计算当前车辆与前车之间的相对速度
-        v_lead = params['v_lead']  # 前车速度（由环境或前车状态提供）
-        s = params['s']  # 当前车辆与前车之间的距离
-
-        delta_v = v_lead - velocity
-        # 计算IDM模型的加速度
-        s_star = s_0 + velocity * T_g + (velocity * delta_v) / (2 * np.sqrt(a_max * b))
-
-        # 限制 s 的最小值避免除以零
-        epsilon = 1e-6  # 一个非常小的值，防止除以零
-        s_safe = max(s, epsilon)  # 保证 s 不为零
-
-        # 限制计算中的比值，防止过大数值
-        velocity_ratio = min(velocity / v_0, 10)
-        s_ratio = min(s_star / s_safe, 10)
-
-        acceleration = a_max * (1 - velocity_ratio ** delta - s_ratio ** 2)
-        #acceleration = a_max * (1 - (velocity / v_0) ** delta - (s_star / s) ** 2)
-        # 更新位置和速度
-        next_position = position + velocity * dt + 0.5 * acceleration * dt ** 2
-        next_velocity = velocity + acceleration * dt
-    return np.array([next_position, next_velocity])
-
-# 目标函数
-def objective(control, state, target, weights, dt, N,type_info):
-    """
-    MPC的优化目标函数
-    :param control: 控制变量（加速度序列）
-    :param state: 当前状态
-    :param target: 目标状态
-    :param weights: 权重 [距离权重, 能耗权重]
-    :param dt: 时间步长
-    :param N: 优化步长
-    :return: 总成本
-    """
-    w_distance, w_energy = weights
-    total_cost = 0
-    type_list = type_info[0]
-
-    for t in range(N):
-        for i in range(len(type_list)):
-            if type_list[i] == 'CAV':
-                state[i] = vehicle_dynamics(state[i], control[t * len(type_list) + i], dt, type_car=type_list[i],
-                                            params=params)
-                #distance_cost = -w_distance * state[i][0]  # 行驶距离最大化
-                v_cost = (state[i][1]-MAX_SPEED)**2
-                #energy_cost = w_energy * control[t]**2  # 能耗最小化
-                #total_cost += distance_cost + energy_cost
-                #total_cost += distance_cost
-                total_cost +=  v_cost
-            elif type_list[i] == 'HDV':
-                if i != len(type_list)-1:
-                    params['v_lead'] = state[i + 1][1]
-                    params['s'] = state[i + 1][0] - state[i][0]
-                else:
-                    params['v_lead'] = MAX_SPEED
-                    params['s'] = 10
-
-                state[i] = vehicle_dynamics(state[i], 0, dt, type_car=type_list[i],
-                                            params=params)
-                #distance_cost = -w_distance * state[i][0]  # 行驶距离最大化
-                v_cost = (state[i][1]-MAX_SPEED)**2
-                total_cost += v_cost
-                #total_cost += distance_cost
-    return total_cost
-
-# 约束条件
-def constraints(control, state, dt, N, vmin, vmax, amin, amax,type_info,now_lane,lane_towards):
-    """
-    定义优化问题的约束
-    """
-    constraints = []
-    type_list = type_info[0]
-    current_phase,remaining_time = get_remaining_phase_and_time(now_lane)
-    print(f"{current_phase} +  {remaining_time}")
-    lane_length = traci.lane.getLength(now_lane)
-    state_houche = []
-    for t in range(N):
-        remaining_time = remaining_time - t*dt
-        if remaining_time<=0:
-            if current_phase == 'r':
-                current_phase = 'g'
-                remaining_time = 10
-            elif current_phase == 'g':
-                current_phase = 'y'
-                remaining_time = 3
-            elif current_phase == 'y':
-                current_phase = 'r'
-                remaining_time = 10
-
-        for i in range(len(type_list)):
-            safety_distance = 2
-            if type_list[i] == 'CAV':
-                state[i] = vehicle_dynamics(state[i], control[t * len(type_list) + i], dt,type_car=type_list[i],params=params)
-                # 添加速度限制
-                constraints.append({'type': 'ineq', 'fun': lambda c: vmax - state[i][1]})
-                constraints.append({'type': 'ineq', 'fun': lambda c: state[i][1] - vmin})
-                # 添加加速度限制
-                constraints.append({'type': 'ineq', 'fun': lambda c: amax - control[t]})
-                constraints.append({'type': 'ineq', 'fun': lambda c: control[t * len(type_list) + i] - amin})
-                # 添加安全距离限制
-                if t >= 0:
-                    if (current_phase == 'r' or current_phase == 'y') and state[i][0] < lane_length:
-                        constraints.append({'type': 'ineq', 'fun': lambda c: lane_length - state[i][0]-safety_distance})
-                    if i > 0:
-                        if type_list[i-1] == 'CAV':
-                            #safety_distance = 2
-                            constraints.append({'type': 'ineq', 'fun': lambda c: state[i][0] - state_houche[0] - safety_distance})
-                        '''if len(just_left_vehicles[now_lane]) !=0 and just_left_vehicles[now_lane][0] in edge_vehicles[lane_towards[:-2]][lane_towards]:
-                            state_qianche = vehicle_dynamics(state, control[t], dt, type_car='HDV', params=params)
-                            constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})'''
-                state_houche = state[i]
-            elif type_list[i] == 'HDV':
-                if i != len(type_list)-1:
-                    params['v_lead'] = state[i + 1][1]
-                    params['s'] = state[i + 1][0] - state[i][0]
-                else:
-                    params['v_lead'] = MAX_SPEED
-                    params['s'] = 10
-                state[i] = vehicle_dynamics(state[i], 0, dt,type_car=type_list[i],params=params)
-                if t >= 0:
-                    if i > 0:
-                        if type_list[i-1] == 'CAV':
-                            #safety_distance = 2
-                            constraints.append({'type': 'ineq', 'fun': lambda c: state[i][0]-state_houche[0]-safety_distance})
-                        '''if len(just_left_vehicles[now_lane]) !=0 and just_left_vehicles[now_lane][0] in edge_vehicles[lane_towards[:-2]][lane_towards]:
-                            state_qianche = vehicle_dynamics(state, control[t], dt, type_car='HDV', params=params)
-                            constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})'''
-                state_houche = state[i]
-                    #edge_vehicles[lane_towards[:-2]][lane_towards]
-                    #constraints.append({'type': 'ineq', 'fun': lambda c: state[0] - safety_distance})
-    return constraints
-
-# MPC主循环
-def mpc_control(initial_state, target_state, weights, N, dt, bounds,type_info,now_lane,lane_towards,last_quarter_vehicles):
-    """
-    基于MPC优化得到最优控制序列
-    :param initial_state: 初始状态 [位置, 速度]
-    :param target_state: 目标状态 [位置, 速度]
-    :param weights: 权重
-    :param N: 优化步长
-    :param dt: 时间步长
-    :param bounds: 控制变量的上下限
-    """
-    type_list = type_info[0]
-
-    # 初始猜测
-    u0 = np.zeros(N*len(type_list))  # 初始控制序列
-    # 约束
-    cons = constraints(u0, initial_state.copy(), dt, N, bounds[2],bounds[3],bounds[0],bounds[1],type_info,now_lane,lane_towards)
-    # 优化求解
-    result = minimize(
-        objective, u0, args=(initial_state.copy(), target_state, weights, dt, N,type_info),
-        constraints=cons, method='SLSQP', bounds=[(-3.0, MAX_ACCEL)] * (N * len(type_list))
-    )
-    i = 0
-    while i < N*len(type_list):
-        for vehicle in last_quarter_vehicles[now_lane[:-2]][now_lane]:
-            control_signal[vehicle].control_list_append(result.x[i])
-            i += 1
-    print(result.x)
-    return result.x  # 返回最优控制序列
 
 
 
@@ -454,6 +268,7 @@ def construct_block_diagonal_matrix(alpha, N):
 
 def construct_HDV_block_matrix(num_CAV, m):
     #m是紧跟这个HDV的CAV的序号（在CAV里的序号）
+    m = m+1 #序号为0的cav其实对应第1个块
     # 创建一个 2 x (2 * num_CAV) 的零矩阵
     result = np.zeros((2, 2 * num_CAV))
 
@@ -468,6 +283,7 @@ def construct_HDV_block_matrix(num_CAV, m):
 
 def construct_CAV_block_matrix(num_CAV, m):
     #m是紧跟这个HDV的CAV的序号（在CAV里的序号）
+    m = m+1 #序号为0的cav其实对应第1个块
     # 创建一个 2 x (2 * num_CAV) 的零矩阵
     result = np.zeros((2, 2 * num_CAV))
 
@@ -476,29 +292,34 @@ def construct_CAV_block_matrix(num_CAV, m):
 
     # 将第 m 个块设置为单位矩阵
     # 每个块的宽度是 2，因此第 m 个块开始的位置是 2*(m-1)
-    result[:, 2 * (m - 1): 2 * m] = -1 * identity_matrix
+    result[:, 2 * (m - 1): 2 * m] =  identity_matrix
     m = m - 1
-    result[:, 2 * (m - 1): 2 * m] = identity_matrix
+    result[:, 2 * (m - 1): 2 * m] = -1 *identity_matrix
 
     return result
 
 def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v_max,v_min,a_max,a_min,L_safe,lane_now,CAV_id_list,HDV_id_list):
+    v_best = 13
+    CAV_id_list.reverse()
+    HDV_id_list.reverse()
+    vehicles_list_this_lane.reverse()
+    initial_state_CAV = np.flipud(initial_state_CAV)
+    initial_state_HDV = np.flipud(initial_state_HDV)
     X0 = initial_state_CAV.flatten()
 
     X0 = X0.reshape(-1, 1) #变成列向量
 
     alpha_c = np.array([[1,dt],
                         [0,1]])
-    beta_c = np.array([0.5*dt*dt],
-                      [0])
+    beta_c = np.array([[0.5*dt*dt],[dt]])
     num_CAV = len(initial_state_CAV)
 
     A = construct_block_diagonal_matrix(alpha_c,num_CAV)
 
     B = construct_block_diagonal_matrix(beta_c,num_CAV)
 
-    h = np.array([0,0],
-                 [0,1])
+    h = np.array([[0,0],
+                 [0,1]])
     epsilon = np.array([0,1])
 
     #H_t = np.block([[h if i == j else np.zeros_like(h) for j in range(num_CAV)] for i in range(num_CAV)])
@@ -509,8 +330,9 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
     Q = np.block([[H_t if i == j else np.zeros_like(H_t) for j in range(N)] for i in range(N)])
 
     C = np.hstack([C_t]*(N))
+    C = C.reshape(1, -1) #变成行向量
 
-    A_tilde = np.vstack([A]*(N))
+    A_tilde = np.vstack([np.linalg.matrix_power(A, i) for i in range(1, N + 1)])
 
     B_tilde = np.zeros((2*N*num_CAV,N*num_CAV))
 
@@ -520,61 +342,104 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
             # 计算 A^(i-j) * B
             power_A = np.linalg.matrix_power(A, i - j)
             # 将 A^(i-j) * B 填充到相应的位置
-            B_tilde[2 * i: 2 * (i + 1), num_CAV * j: num_CAV * (j + 1)] = np.dot(power_A, B)
+            B_tilde[2 *num_CAV* i: 2 *num_CAV* (i + 1), num_CAV * j: num_CAV * (j + 1)] = np.dot(power_A, B)
 
     #QP问题的参数
     half_H_qp = B_tilde.T @ Q @ B_tilde
 
-    C_T = 2*X0.T @ A_tilde.T @ Q @ B_tilde - 2*v_max @ C @ B_tilde
+    C_T = 2*X0.T @ A_tilde.T @ Q @ B_tilde - 2*v_best * C @ B_tilde
 
-    u = cp.Variable(num_CAV*N)
-    objective = cp.Minimize(cp.quad_form(u,half_H_qp)+ C_T @ u)
+    u = cp.Variable((num_CAV*N,1))
+
+
 
 
     #不等式约束
 
-    constrains = []
+    constraints = []
 
+    constraints.append(u>=a_min)
+    constraints.append(u<=a_max)
     #避碰
     HDVcons_left = np.array([1,0])
     CAVcons_left = np.array([1,0])
+    phase,remaining_time = get_remaining_phase_and_time(lane_now)
+
+    #生成红绿灯约束矩阵
+    big_M = 9999
+    traffic_signal_list = []
+    for i in range(N):
+        if remaining_time >= 0 :
+            pass
+        else:
+            if phase == 'r':
+                phase = 'g'
+                remaining_time = 10
+            elif phase == 'y':
+                phase = 'r'
+                remaining_time = 10
+            elif phase == 'g':
+                phase = 'y'
+                remaining_time = 3
+        if phase == 'r':
+            traffic_signal_list.append(0)
+        elif phase == 'y':
+            traffic_signal_list.append(0)
+        elif phase == 'g':
+            traffic_signal_list.append(big_M)
+        remaining_time = remaining_time - dt
+
+    signal_matrix = np.array(traffic_signal_list).reshape(-1, 1)
+
+
     for (idx,vehicle_id) in enumerate(vehicles_list_this_lane):
         if idx == 0 and (vehicle_id in CAV_id_list): #0 是最靠近路口的
+            print('加入红灯停约束')
+            #红灯停的约束
             HDVcons_right = construct_HDV_block_matrix(num_CAV,0)
             HDVcons = HDVcons_left @ HDVcons_right
+            HDVcons = HDVcons.reshape(1,-1)
             HDVconsM = construct_block_diagonal_matrix(HDVcons, N)
             lane_length = traci.lane.getLength(lane_now)
             LHDVsafe = np.vstack([lane_length-L_safe] * N)
             Inequal_with_u = HDVconsM @ B_tilde
-            Inequal_right = LHDVsafe - HDVconsM @ A_tilde @ X0
+            Inequal_right = LHDVsafe - HDVconsM @ A_tilde @ X0 + signal_matrix
 
+            #硬约束
             # 加入不等式约束~~~~~~~~~~~~~
-            constrains.append(Inequal_with_u @ u <= Inequal_right)
+            #constraints.append(Inequal_with_u @ u <= Inequal_right)
+            print(Inequal_right)
+
+            #软约束
+            #加入等式约束 同时更改目标函数
+            Soft = cp.Variable((N,1), nonneg=False)
+            constraints.append(Inequal_with_u @ u + Soft <= Inequal_right)
+
+            #constraints.append(u <= np.linalg.inv(Inequal_with_u) @ Inequal_right)
 
             continue
         if vehicle_id in CAV_id_list:
             if vehicles_list_this_lane[idx-1] in HDV_id_list:
                 HDVcons = HDVcons_left @ construct_HDV_block_matrix(num_CAV,CAV_id_list.index(vehicle_id))
+                HDVcons = HDVcons.reshape(1, -1)
                 HDVconsM = construct_block_diagonal_matrix(HDVcons,N)
                 LHDVsafe = np.vstack([initial_state_HDV[HDV_id_list.index(vehicles_list_this_lane[idx-1])][0]-L_safe]*N)
                 Inequal_with_u = HDVconsM @ B_tilde
                 Inequal_right = LHDVsafe - HDVconsM @ A_tilde @ X0
                 # 加入不等式约束~~~~~~~~~~~~~
-                constrains.append(Inequal_with_u @ u <= Inequal_right)
+                constraints.append(Inequal_with_u @ u <= Inequal_right)
             elif vehicles_list_this_lane[idx-1] in CAV_id_list:
                 CAVcons = CAVcons_left @ construct_CAV_block_matrix(num_CAV,CAV_id_list.index(vehicle_id))
+                CAVcons = CAVcons.reshape(1, -1)
                 CAVconsM = construct_block_diagonal_matrix(CAVcons,N)
-                LCAVsafe = np.vstack[[-L_safe]*N]
+                LCAVsafe = np.vstack([-L_safe]*N)
                 Inequal_with_u = CAVconsM @ B_tilde
                 Inequal_right = -1 *CAVconsM @ A_tilde @ X0 + LCAVsafe
                 # 加入不等式约束~~~~~~~~~~~~~
-                constrains.append(Inequal_with_u @ u <= Inequal_right)
-
-
-
+                constraints.append(Inequal_with_u @ u <= Inequal_right)
 
     #限速
-    speed_little_matrix = np.array([0,1])
+    speed_little_matrix = np.array([0,1]).reshape(1,-1)
     VmaxM = np.vstack([v_max]*(num_CAV*N))
     VminM = np.vstack([v_min]*(num_CAV*N))
     Vtake = construct_block_diagonal_matrix(speed_little_matrix,num_CAV)
@@ -584,21 +449,52 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
     Inequal_with_u = VtakeM @ B_tilde
     Inequal_right = VmaxM - VtakeM @ A_tilde @ X0
     #加入不等式约束~~~~~
-    constrains.append(Inequal_with_u @ u <= Inequal_right)
+    constraints.append(Inequal_with_u @ u <= Inequal_right)
     #v_min:
     Inequal_with_u = -1 * VtakeM @ B_tilde
     Inequal_right = VtakeM @ A_tilde @ X0 - VminM
     # 加入不等式约束~~~~~~~~~~~~~
-    constrains.append(Inequal_with_u @ u <= Inequal_right)
+    constraints.append(Inequal_with_u @ u <= Inequal_right)
+
+    #objective = cp.Minimize(cp.quad_form(u,half_H_qp)+ C_T @ u)   硬约束
+    objective = 0
+    #objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 100 * cp.norm(Soft, 2))
+    try:
+        print('有CAV位于首位')
+        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 100*cp.norm(Soft,2))
+    except:
+        print('无CAV位于首位')
+        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u)
 
     problem = cp.Problem(objective, constraints)
-    problem.solve()
+    problem.solve(verbose=True)
     # 输出结果
+    print("Solver status:", problem.status)
+    if problem.status == 'infeasible':
+        for i, constraint in enumerate(constraints):
+            try:
+                lhs = constraint.args[0].value
+                rhs = constraint.args[1].value
+                print(f"Constraint {i}: {lhs} <= {rhs}")
+            except Exception as e:
+                print(f"Constraint {i} could not be evaluated: {e}")
+        print('11111111111111111111')
     print("Optimal value:", problem.value)
     print("Optimal u:", u.value)
 
+    i = 0
+    while i < N*len(CAV_id_list):
+        for vehicle in CAV_id_list:
+            control_signal[vehicle].control_list_append(u.value[i])
+            i += 1
 
-
+#表面上是数学优化问题上约束满足的问题。所以我从数学上考虑加入软约束。但是这个问题的根本原因在于车芸协同控制/云边协同控制的最终的决定权在车还是在云。这种是一种强动态
+#环境下必须要考虑，但大家容易忽略的问题。我们认为在车，因为他直接面对动态环境。这是机制性的问题。只要有时延存在，就一定会遇到，只是概率大小。
+#根本上解决，应该把决定权给车。即车端如何融合云端信号。如何研究车云融合控制。CBF 不偏离云端控制的前提下，保证现实动态约束的安全性。
+#在云端控制的时候，考虑信号灯未来相位的变化。目前，信号灯的未来状态并没有传递给云端控制器。即，车路云协同还没有深层。尤其是在MPC预测控制框架下。他们数据和处理事实上都在
+#共同的边缘云设备上，不传递是不应该的。这样会形成混合整数规划问题。无论是可解性还是计算时间，都是新的挑战。参考邓宇的研究。
+#要尽可能地降低采样时间，不要让人为的时延大于计算时延+通信时延。不然这个时延是人为设置引起的。这个和软阈值约束不矛盾，可以独立优化。
+#对比实验中，把考虑了车路协同和完全没有考虑的对比。体现机制性的区别。insight也体现出来了。很妙。国内的期刊就是喜欢这种以小见大的感觉。佐证政策。
 
 
 def record_data(step):
@@ -657,13 +553,13 @@ if __name__ == "__main__":
         sim_end = time.time()
         time_now = traci.simulation.getTime()
         vehicles_list = traci.vehicle.getIDList()
-        if step%5==0:
+        if step%2==0:
             #global last_quarter_vehicles
             edge_vehicles, last_quarter_vehicles = get_all_edge_vehicles_and_last_quarter()
             print(last_quarter_vehicles)
             # 获取刚刚离开每个车道的车辆
             just_left_vehicles, lane_previous_vehicles = get_vehicles_just_left(lane_previous_vehicles)
-            update_cav_speeds('j3', traffic_light_to_lanes,last_quarter_vehicles)  # 更新 CAV 的速度控制
+            update_cav_speeds('j3', traffic_light_to_lanes,last_quarter_vehicles,N,dt,L_safe)  # 更新 CAV 的速度控制
         for vehicle_id in vehicles_list:
             if vehicle_id not in control_signal.keys():
                 continue

@@ -24,6 +24,11 @@ exit_edges =  ['j3tj2','j3tj5','j4tj6','j1tj8']   # 替换为实际的出口边
 time_list = {}
 # 写入到 .trips.xml 文件
 with open("custom_gaussian.trips.xml", "w") as f:
+    # 定义车辆类型
+    f.write('<types>\n')
+    f.write('    <type id="CAV" length="3" />\n')  # CAV车长为4.5米
+    f.write('    <type id="HDV" length="3" />\n')   # HDV车长为12米
+    f.write('</types>\n')
     f.write('<routes>\n')
     for i, depart_time in enumerate(depart_times):
 
@@ -37,9 +42,11 @@ with open("custom_gaussian.trips.xml", "w") as f:
             to_edge = np.random.choice(exit_edges)
             to_edge_index = exit_edges.index(to_edge)
         if i%(1//Permeability)==0:
-            f.write(f'    <trip id="CAV_{i}" depart="{int(depart_time)}" from="{from_edge}" to="{to_edge}" />\n')
+            vehicle_type = 'CAV'
         else:
-            f.write(f'    <trip id="HDV_{i}" depart="{int(depart_time)}" from="{from_edge}" to="{to_edge}" />\n')
+            vehicle_type = 'HDV'
+
+        f.write(f'    <trip id="{vehicle_type}_{i}" depart="{int(depart_time)}" from="{from_edge}" to="{to_edge} type="{vehicle_type}" />\n')
         if str(depart_time//3600+1) not in time_list.keys():
             time_list[str(depart_time//3600+1)] = 1
         else:
