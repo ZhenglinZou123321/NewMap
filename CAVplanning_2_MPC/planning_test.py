@@ -1,3 +1,4 @@
+#encoding: utf-8
 import traci
 import sumolib
 import numpy as np
@@ -15,7 +16,10 @@ import queue
 import time
 import copy
 import cvxpy as cp
+import os
 
+import sys
+#sys.setdefaultencoding('utf-8')
 def update_cav_control_thread_func(traffic_light_to_lanes, lane_previous_vehicles, control_signal,N,dt,L_safe):
     ''' 这个函数在独立线程中运行，负责周期性地更新CAV车辆的速度控制
     :param traffic_light_to_lanes:
@@ -35,6 +39,25 @@ def update_cav_control_thread_func(traffic_light_to_lanes, lane_previous_vehicle
 
 
 
+def idm_acceleration(current_speed, front_vehicle_speed, gap, front_vehicle_id=None):
+    """
+    根据IDM模型计算车辆的加速度。
+
+    参数:
+    current_speed (float): 当前车辆速度 (m/s)
+    front_vehicle_speed (float): 前车速度 (m/s)
+    gap (float): 当前车与前车的间距 (m)
+    front_vehicle_id (str, 可选): 前车的ID，用于调试或其他可能的拓展需求，默认为None
+
+    返回:
+    float: 根据IDM模型计算出的当前车辆加速度 (m/s²)
+    """
+    relative_speed = current_speed - front_vehicle_speed
+    s_star = s_0 + current_speed * T + (current_speed * relative_speed) / (2 * np.sqrt(a_max * b))
+    acceleration = a_max * (1 - (current_speed / V_0) ** delta - (s_star / gap) ** 2)
+    return acceleration
+
+
 # SUMO 仿真配置
 SUMO_BINARY = "sumo-gui"  # 使用 sumo-gui 以便可视化
 CONFIG_FILE = "Gaussian_trip.sumocfg"  # 仿真配置文件路径
@@ -46,27 +69,11 @@ def start_sumo():
 
 
 # 车辆参数
-MAX_SPEED = 15  # 最大速度 (m/s)
+MAX_SPEED = 11  # 最大速度 (m/s)
 MIN_SPEED = 0
-MAX_ACCEL = 10  # 最大加速度 (m/s^2)
-MIN_ACCEL = -10
-REACTION_TIME = 1.0  # 反应时间 (s)
+MAX_ACCEL = 3  # 最大加速度 (m/s^2)
+MIN_ACCEL = -20
 
-# IDM模型的参数
-params = {
-
-    'v_0': MAX_SPEED,  # 期望速度30 m/s
-    'delta': 4,  # 加速因子
-    's_0': 2,  # 最小跟车距离
-    'T_g': 1.5,  # 期望时间跟车距离
-    'a_max': MAX_ACCEL,  # 最大加速度
-    'b': MIN_ACCEL,  # 最大减速度
-
-    #下面两个参数是要进行计算的
-    'v_lead': 18.0,  # 前车速度（假设为18 m/s）
-    's': 50  # 当前车辆与前车的距离（假设为50米）
-
-}
 
 # 信号灯周期和时间参数
 GREEN_TIME = 30  # 绿灯时间
@@ -74,7 +81,7 @@ RED_TIME = 30  # 红灯时间
 CYCLE_TIME = GREEN_TIME + RED_TIME
 dt = 0.2
 N=40
-L_safe = 2
+L_safe = 4 + 3 #4米车长，3米间距
 # 初始化交叉口车辆列表
 vehicles = []
 
@@ -351,9 +358,6 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
 
     u = cp.Variable((num_CAV*N,1))
 
-
-
-
     #不等式约束
 
     constraints = []
@@ -366,7 +370,7 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
     phase,remaining_time = get_remaining_phase_and_time(lane_now)
 
     #生成红绿灯约束矩阵
-    big_M = 9999
+    big_M = 999
     traffic_signal_list = []
     for i in range(N):
         if remaining_time >= 0 :
@@ -401,7 +405,7 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
             HDVcons = HDVcons.reshape(1,-1)
             HDVconsM = construct_block_diagonal_matrix(HDVcons, N)
             lane_length = traci.lane.getLength(lane_now)
-            LHDVsafe = np.vstack([lane_length-L_safe] * N)
+            LHDVsafe = np.vstack([lane_length-L_safe-6] * N)
             Inequal_with_u = HDVconsM @ B_tilde
             Inequal_right = LHDVsafe - HDVconsM @ A_tilde @ X0 + signal_matrix
 
@@ -418,6 +422,15 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
             #constraints.append(u <= np.linalg.inv(Inequal_with_u) @ Inequal_right)
 
             continue
+
+            # IDM模型参数
+            V_0 = MAX_SPEED  # 期望速度 (m/s)，可根据实际情况调整
+            T = 1.5  # 期望车头时距 (s)，可根据实际情况调整
+            a_max = 3  # 最大加速度 (m/s²)，与前面已定义的保持一致或按需调整
+            b = 2  # 舒适制动减速度 (m/s²)，可根据实际情况调整
+            s_0 = 2  # 最小间距 (m)，可根据实际情况调整
+            delta = 4  # 速度影响指数参数，可根据实际情况调整
+
         if vehicle_id in CAV_id_list:
             if vehicles_list_this_lane[idx-1] in HDV_id_list:
                 HDVcons = HDVcons_left @ construct_HDV_block_matrix(num_CAV,CAV_id_list.index(vehicle_id))
@@ -428,6 +441,9 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
                 Inequal_right = LHDVsafe - HDVconsM @ A_tilde @ X0
                 # 加入不等式约束~~~~~~~~~~~~~
                 constraints.append(Inequal_with_u @ u <= Inequal_right)
+                #IDM lower_control
+
+
             elif vehicles_list_this_lane[idx-1] in CAV_id_list:
                 CAVcons = CAVcons_left @ construct_CAV_block_matrix(num_CAV,CAV_id_list.index(vehicle_id))
                 CAVcons = CAVcons.reshape(1, -1)
@@ -461,13 +477,13 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
     #objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 100 * cp.norm(Soft, 2))
     try:
         print('有CAV位于首位')
-        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 100*cp.norm(Soft,2))
+        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 10000*cp.norm(Soft,2))
     except:
         print('无CAV位于首位')
         objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u)
 
     problem = cp.Problem(objective, constraints)
-    problem.solve(verbose=True)
+    problem.solve(solver=cp.GUROBI, verbose=True, solver_opts={"LogFile": "gurobi.log"})
     # 输出结果
     print("Solver status:", problem.status)
     if problem.status == 'infeasible':
@@ -514,6 +530,7 @@ edge_vehicles = {}
 
 lane_previous_vehicles = {}  # 用于存储每条车道上一时刻的车辆
 control_signal = {}
+Lower_control_signal = {}
 step = 0
 if __name__ == "__main__":
     start_sumo()
@@ -547,7 +564,7 @@ if __name__ == "__main__":
     Sampling_T = 5
     t_tick = 0
 
-    while step < 3600*3:  # 仿真 3 小时
+    while step < int(3600*3/0.2):  # 仿真 3 小时
         sim_start = time.time()
         traci.simulationStep()  # 仿真步进
         sim_end = time.time()
@@ -583,8 +600,8 @@ if __name__ == "__main__":
                 pass
 
         elapsed_time = sim_end - sim_start
-        if elapsed_time < 0.2:
-            time.sleep(0.2-elapsed_time)
+        #if elapsed_time < 1:
+            #time.sleep(1-elapsed_time)
 
 
             #update_cav_speeds('j3',traffic_light_to_lanes)  # 更新 CAV 的速度控制

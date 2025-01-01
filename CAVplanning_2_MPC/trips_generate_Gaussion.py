@@ -5,15 +5,20 @@ import numpy as np
 total_hours = 3            # 总仿真时间
 total_seconds = total_hours * 3600
 mean_time = total_seconds / 2  # 高斯分布的均值，5小时为高峰
-std_dev = total_seconds / 3    # 标准差，控制分布的宽度
-num_vehicles = 400          # 生成的车辆数量
+std_dev = total_seconds / 1    # 标准差，控制分布的宽度
+num_vehicles = 2000          # 生成的车辆数量
 Permeability = 0.3
 
 
 # 生成符合高斯分布的出发时间序列
 depart_times = np.random.normal(loc=mean_time, scale=std_dev, size=num_vehicles)
-depart_times = np.clip(depart_times, 0, total_seconds)  # 将出发时间限制在 [0, total_seconds] 范围内
+#min_depart_time = np.min(depart_times)
+#depart_times = depart_times - min_depart_time
+# 筛选出在 [0, total_seconds] 范围内的出发时间
+depart_times = depart_times[depart_times >= 0]  # 保证出发时间大于等于0
+depart_times = depart_times[depart_times <= total_seconds]  # 保证出发时间小于等于 total_seconds
 depart_times = np.sort(depart_times)  # 排序出发时间
+
 
 
 # 定义出发和到达边
@@ -24,7 +29,13 @@ exit_edges =  ['j3tj2','j3tj5','j4tj6','j1tj8']   # 替换为实际的出口边
 time_list = {}
 # 写入到 .trips.xml 文件
 with open("custom_gaussian.trips.xml", "w") as f:
+
     f.write('<routes>\n')
+    # 定义车辆类型
+    f.write('<vTypeDistribution id="typedist1">\n')
+    f.write('    <vType id="CAV" length="4" />\n')  # CAV车长为4.5米
+    f.write('    <vType id="HDV" length="4" />\n')   # HDV车长为12米
+    f.write('</vTypeDistribution>\n')
     for i, depart_time in enumerate(depart_times):
 
         from_edge = np.random.choice(entry_edges)
@@ -37,9 +48,11 @@ with open("custom_gaussian.trips.xml", "w") as f:
             to_edge = np.random.choice(exit_edges)
             to_edge_index = exit_edges.index(to_edge)
         if i%(1//Permeability)==0:
-            f.write(f'    <trip id="CAV_{i}" depart="{int(depart_time)}" from="{from_edge}" to="{to_edge}" />\n')
+            vehicle_type = 'CAV'
         else:
-            f.write(f'    <trip id="HDV_{i}" depart="{int(depart_time)}" from="{from_edge}" to="{to_edge}" />\n')
+            vehicle_type = 'HDV'
+
+        f.write(f'    <trip id="{vehicle_type}_{i}" depart="{int(depart_time)}" from="{from_edge}" to="{to_edge}" type="{vehicle_type}"/>\n')
         if str(depart_time//3600+1) not in time_list.keys():
             time_list[str(depart_time//3600+1)] = 1
         else:

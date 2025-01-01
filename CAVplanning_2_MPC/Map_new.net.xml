@@ -182,14 +182,14 @@
         <phase duration="3" state="rrryyGr" />
     </tlLogic>
     <tlLogic id="j3" offset="0" programID="0" type="static">
-        <phase duration="30" state="GGGGGGrrrrgggrrrrrrrGGGGGGrrrrgggrrrrrrr" />
-        <phase duration="3" state="GGGyyyrrrrgggrrrrrrrGGGyyyrrrrgggrrrrrrr" />
-        <phase duration="30" state="GGGrrrgggggggrrrrrrrGGGrrrgggggggrrrrrrr" />
-        <phase duration="3" state="GGGrrryyyygggrrrrrrrGGGrrryyyygggrrrrrrr" />
-        <phase duration="30" state="GGGrrrrrrrggggggrrrrGGGrrrrrrrggggggrrrr" />
-        <phase duration="3" state="GGGrrrrrrrgggyyyrrrrGGGrrrrrrrgggyyyrrrr" />
-        <phase duration="30" state="GGGrrrrrrrgggrrrggggGGGrrrrrrrgggrrrgggg" />
-        <phase duration="3" state="GGGrrrrrrrgggrrryyyyGGGrrrrrrrgggrrryyyy" />
+        <phase duration="15" state="GGrgrrGGrgrr" />
+        <phase duration="3" state="GyrgrrGyrgrr" />
+        <phase duration="15" state="GrggrrGrggrr" />
+        <phase duration="3" state="GrygrrGrygrr" />
+        <phase duration="15" state="GrrggrGrrggr" />
+        <phase duration="3" state="GrrgyrGrrgyr" />
+        <phase duration="15" state="GrrgrgGrrgrg" />
+        <phase duration="3" state="GrrgryGrrgry" />
     </tlLogic>
     <tlLogic id="j4" offset="0" programID="0" type="static">
         <phase duration="42" state="GGGGGGGggrrr" />
@@ -253,15 +253,15 @@
 
     <connection dir="r" from="j3tj1" fromLane="0" linkIndex="3" state="o" tl="j1" to="j1tj7" toLane="0" via=":j1_3_0" />
     <connection dir="l" from="j3tj1" fromLane="1" linkIndex="4" state="o" tl="j1" to="j1tj8" toLane="0" via=":j1_4_0" />
-    <connection dir="r" from="j2tj3" fromLane="0" linkIndex="20" state="O" tl="j3" to="j3tj5" toLane="0" via=":j3_6_0" />
-    <connection dir="s" from="j2tj3" fromLane="1" linkIndex="24" state="o" tl="j3" to="j3tj4" toLane="1" via=":j3_7_0" />
-    <connection dir="l" from="j2tj3" fromLane="2" linkIndex="28" state="o" tl="j3" to="j3tj1" toLane="2" via=":j3_8_0" />
-    <connection dir="r" from="j5tj3" fromLane="0" linkIndex="10" state="O" tl="j3" to="j3tj4" toLane="0" via=":j3_3_0" />
-    <connection dir="s" from="j5tj3" fromLane="1" linkIndex="14" state="O" tl="j3" to="j3tj1" toLane="1" via=":j3_4_0" />
-    <connection dir="l" from="j5tj3" fromLane="2" linkIndex="18" state="o" tl="j3" to="j3tj2" toLane="2" via=":j3_5_0" />
+    <connection dir="r" from="j2tj3" fromLane="0" linkIndex="6" state="O" tl="j3" to="j3tj5" toLane="0" via=":j3_6_0" />
+    <connection dir="s" from="j2tj3" fromLane="1" linkIndex="7" state="o" tl="j3" to="j3tj4" toLane="1" via=":j3_7_0" />
+    <connection dir="l" from="j2tj3" fromLane="2" linkIndex="8" state="o" tl="j3" to="j3tj1" toLane="2" via=":j3_8_0" />
+    <connection dir="r" from="j5tj3" fromLane="0" linkIndex="3" state="O" tl="j3" to="j3tj4" toLane="0" via=":j3_3_0" />
+    <connection dir="s" from="j5tj3" fromLane="1" linkIndex="4" state="O" tl="j3" to="j3tj1" toLane="1" via=":j3_4_0" />
+    <connection dir="l" from="j5tj3" fromLane="2" linkIndex="5" state="o" tl="j3" to="j3tj2" toLane="2" via=":j3_5_0" />
     <connection dir="r" from="j4tj3" fromLane="0" linkIndex="0" state="O" tl="j3" to="j3tj1" toLane="0" via=":j3_0_0" />
-    <connection dir="s" from="j4tj3" fromLane="1" linkIndex="4" state="o" tl="j3" to="j3tj2" toLane="1" via=":j3_1_0" />
-    <connection dir="l" from="j4tj3" fromLane="2" linkIndex="8" state="o" tl="j3" to="j3tj5" toLane="2" via=":j3_2_0" />
+    <connection dir="s" from="j4tj3" fromLane="1" linkIndex="1" state="o" tl="j3" to="j3tj2" toLane="1" via=":j3_1_0" />
+    <connection dir="l" from="j4tj3" fromLane="2" linkIndex="2" state="o" tl="j3" to="j3tj5" toLane="2" via=":j3_2_0" />
     <connection dir="r" from="j7tj4" fromLane="0" linkIndex="9" state="o" tl="j4" to="j4tj3" toLane="0" via=":j4_9_0" />
     <connection dir="l" from="j7tj4" fromLane="1" linkIndex="10" state="o" tl="j4" to="j4tj6" toLane="1" via=":j4_10_0" />
     <connection dir="l" from="j7tj4" fromLane="2" linkIndex="11" state="o" tl="j4" to="j4tj6" toLane="2" via=":j4_10_1" />
@@ -274,9 +274,9 @@
     <connection dir="l" from="j7tj1" fromLane="0" linkIndex="2" state="o" tl="j1" to="j1tj3" toLane="2" via=":j1_1_1" />
     <connection dir="r" from="j8tj1" fromLane="0" linkIndex="5" state="O" tl="j1" to="j1tj3" toLane="0" via=":j1_5_0" />
     <connection dir="s" from="j8tj1" fromLane="0" linkIndex="6" state="O" tl="j1" to="j1tj7" toLane="0" via=":j1_6_0" />
-    <connection dir="r" from="j1tj3" fromLane="0" linkIndex="30" state="O" tl="j3" to="j3tj2" toLane="0" via=":j3_9_0" />
-    <connection dir="s" from="j1tj3" fromLane="1" linkIndex="34" state="O" tl="j3" to="j3tj5" toLane="1" via=":j3_10_0" />
-    <connection dir="l" from="j1tj3" fromLane="2" linkIndex="38" state="o" tl="j3" to="j3tj4" toLane="2" via=":j3_11_0" />
+    <connection dir="r" from="j1tj3" fromLane="0" linkIndex="9" state="O" tl="j3" to="j3tj2" toLane="0" via=":j3_9_0" />
+    <connection dir="s" from="j1tj3" fromLane="1" linkIndex="10" state="O" tl="j3" to="j3tj5" toLane="1" via=":j3_10_0" />
+    <connection dir="l" from="j1tj3" fromLane="2" linkIndex="11" state="o" tl="j3" to="j3tj4" toLane="2" via=":j3_11_0" />
     <connection dir="s" from="j3tj4" fromLane="0" linkIndex="4" state="O" tl="j4" to="j4tj6" toLane="0" via=":j4_4_0" />
     <connection dir="s" from="j3tj4" fromLane="1" linkIndex="5" state="O" tl="j4" to="j4tj6" toLane="1" via=":j4_4_1" />
     <connection dir="s" from="j3tj4" fromLane="2" linkIndex="6" state="O" tl="j4" to="j4tj6" toLane="2" via=":j4_4_2" />
