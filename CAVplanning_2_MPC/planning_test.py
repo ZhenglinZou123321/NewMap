@@ -17,9 +17,14 @@ import time
 import copy
 import cvxpy as cp
 import os
-
 import sys
-#sys.setdefaultencoding('utf-8')
+
+
+
+
+
+
+
 def update_cav_control_thread_func(traffic_light_to_lanes, lane_previous_vehicles, control_signal,N,dt,L_safe):
     ''' 这个函数在独立线程中运行，负责周期性地更新CAV车辆的速度控制
     :param traffic_light_to_lanes:
@@ -39,33 +44,6 @@ def update_cav_control_thread_func(traffic_light_to_lanes, lane_previous_vehicle
 
 
 
-def idm_acceleration(current_speed, front_vehicle_speed, gap, front_vehicle_id=None):
-    """
-    根据IDM模型计算车辆的加速度。
-
-    参数:
-    current_speed (float): 当前车辆速度 (m/s)
-    front_vehicle_speed (float): 前车速度 (m/s)
-    gap (float): 当前车与前车的间距 (m)
-    front_vehicle_id (str, 可选): 前车的ID，用于调试或其他可能的拓展需求，默认为None
-
-    返回:
-    float: 根据IDM模型计算出的当前车辆加速度 (m/s²)
-    """
-    relative_speed = current_speed - front_vehicle_speed
-    s_star = s_0 + current_speed * T + (current_speed * relative_speed) / (2 * np.sqrt(a_max * b))
-    acceleration = a_max * (1 - (current_speed / V_0) ** delta - (s_star / gap) ** 2)
-    return acceleration
-
-
-# SUMO 仿真配置
-SUMO_BINARY = "sumo-gui"  # 使用 sumo-gui 以便可视化
-CONFIG_FILE = "Gaussian_trip.sumocfg"  # 仿真配置文件路径
-
-
-# 启动 SUMO 仿真
-def start_sumo():
-    traci.start([SUMO_BINARY, "-c", CONFIG_FILE,"--step-length",'0.2'])
 
 
 # 车辆参数
@@ -85,6 +63,126 @@ L_safe = 4 + 3 #4米车长，3米间距
 # 初始化交叉口车辆列表
 vehicles = []
 
+
+
+
+
+# IDM模型参数
+V_0 = MAX_SPEED  # 期望速度 (m/s)，可根据实际情况调整
+T = 1.5  # 期望车头时距 (s)，可根据实际情况调整
+a_max = 3  # 最大加速度 (m/s²)，与前面已定义的保持一致或按需调整
+b = 2  # 舒适制动减速度 (m/s²)，可根据实际情况调整
+s_0 = 2  # 最小间距 (m)，可根据实际情况调整
+delta = 4  # 速度影响指数参数，可根据实际情况调整
+
+def idm_acceleration(current_speed, front_vehicle_speed, gap,  front_vehicle_id=None):
+    """
+    根据IDM模型计算车辆的加速度。
+
+    参数:
+    current_speed (float): 当前车辆速度 (m/s)
+    front_vehicle_speed (float): 前车速度 (m/s)
+    gap (float): 当前车与前车的间距 (m)
+    front_vehicle_id (str, 可选): 前车的ID，用于调试或其他可能的拓展需求，默认为None
+
+    返回:
+    float: 根据IDM模型计算出的当前车辆加速度 (m/s²)
+    """
+    relative_speed = current_speed - front_vehicle_speed
+    s_star = s_0 + current_speed * T + (current_speed * relative_speed) / (2 * np.sqrt(a_max * b))
+    acceleration = a_max * (1 - (current_speed / V_0) ** delta - (s_star / gap) ** 2)
+    return min(max(acceleration,MIN_ACCEL),MAX_ACCEL)
+
+
+# 线程类定义
+class VehicleController(threading.Thread):
+    def __init__(self, vehicle_id_):
+        threading.Thread.__init__(self)
+        self.vehicle_id = vehicle_id_
+        self.running = True
+        self.acc_control = 0
+        self.idm_acc = 0
+    def run(self):
+        while self.running and traci.simulation.getMinExpectedNumber() > 0 and self.vehicle_id[0:3] == "CAV":
+            try:
+                # 检查车辆是否仍然在仿真中
+                if self.vehicle_id in traci.vehicle.getIDList():
+                    # 示例控制逻辑：设置车辆速度
+                    speed = traci.vehicle.getSpeed(self.vehicle_id)
+                    print("iiiii")
+                    front_info = traci.vehicle.getLeader(self.vehicle_id)
+                    print("ddddd")
+                    self.idm_acc = None
+                    if front_info != None:
+                        front_id,gap = front_info
+                        self.idm_acc = idm_acceleration(speed, traci.vehicle.getSpeed(front_id), gap, front_vehicle_id=None)
+                    else:
+                        self.lane_now = traci.vehicle.getLaneID(vehicle_id)
+                        phase,remaining_time = get_remaining_phase_and_time(self.lane_now)
+                        if phase == 'r' or phase == 'y':
+                            lane_length = traci.lane.getLength(self.lane_now)
+                            self.idm_acc = idm_acceleration(speed, 0,
+                                                        lane_length-traci.vehicle.getLanePosition(self.vehicle_id),
+                                                        front_vehicle_id=None)
+                    if self.vehicle_id[0:3] == "CAV":
+                        if len(control_signal[self.vehicle_id].control_list) != 0:
+                            traci.vehicle.setSpeedMode(self.vehicle_id, 00000)  # 关闭跟驰模型
+                            self.mpc_acc = control_signal[self.vehicle_id].control_signal(time_now, dt)
+                            if self.idm_acc != None:
+                                #self.acc_control = control_signal[self.vehicle_id].control_signal(time_now, dt)
+                                print(f"{self.vehicle_id} MPC控制量为：{self.mpc_acc}, IDM控制量为：{self.idm_acc}")
+                                if self.mpc_acc != None:
+                                    if self.mpc_acc < self.idm_acc:
+                                        self.acc_control = control_signal[self.vehicle_id].control_signal(time_now, dt)
+                                        print(f"{self.vehicle_id} 施加MPC控制量为：{self.acc_control}")
+                                        traci.vehicle.setColor(self.vehicle_id, (0, 0, 255)) # MPC = blue
+                                    else:
+                                        self.acc_control = self.idm_acc
+                                        print(f"{self.vehicle_id} 施加IDM控制量为：{self.acc_control}")
+                                        traci.vehicle.setColor(self.vehicle_id, (255, 0, 0))  # IDM = red
+                                else:
+                                    self.acc_control = self.idm_acc
+                                    print(f"{self.vehicle_id} 施加IDM控制量为：{self.acc_control}")
+                                    traci.vehicle.setColor(self.vehicle_id, (255, 0, 0))  # IDM = red
+                            else:
+                                self.acc_control = self.mpc_acc
+                                traci.vehicle.setColor(self.vehicle_id, (0, 0, 255))  # MPC =  blue
+                            #print(self.acc_control)
+                            if self.acc_control != None:
+                                traci.vehicle.setAcceleration(self.vehicle_id, self.acc_control, 1)
+                            else:
+                                traci.vehicle.setAcceleration(self.vehicle_id, 0.0, 1)
+                            #print(control_signal[self.vehicle_id].control_list_show())
+                            print(f"{self.vehicle_id}已施加加速度控制量：{self.acc_control}")
+                # new_speed = speed + 1  # 简单地增加速度
+                # traci.vehicle.setSpeed(self.vehicle_id, new_speed)
+                # print(f"Vehicle {self.vehicle_id} speed updated to {new_speed}")
+                else:
+                    # 如果车辆离开仿真，停止线程
+                    print(f"Vehicle {self.vehicle_id} has left the simulation.")
+                    self.running = False
+            except Exception as e:
+                print(f"Error controlling vehicle {self.vehicle_id}: {e}")
+                self.running = False
+
+            # 控制逻辑运行间隔
+            time.sleep(0.0001)
+
+    def stop(self):
+        self.running = False
+
+
+# SUMO 仿真配置
+SUMO_BINARY = "sumo-gui"  # 使用 sumo-gui 以便可视化
+CONFIG_FILE = "Gaussian_trip.sumocfg"  # 仿真配置文件路径
+
+
+# 启动 SUMO 仿真
+def start_sumo():
+    traci.start([SUMO_BINARY, "-c", CONFIG_FILE,"--step-length",'0.2'])
+
+
+
 class control_info:
     def __init__(self,vehicle_id):
         self.vehicle_id = vehicle_id
@@ -98,7 +196,10 @@ class control_info:
     def control_list_append(self,control_signal):
         self.control_list.append(control_signal)
     def control_signal(self,time,dt):
-        return self.control_list[int((time-self.time_when_cal)/dt)]
+        if int((time-self.time_when_cal)/dt) <= len(self.control_list)-1:
+            return self.control_list[int((time-self.time_when_cal)/dt)]
+        else:
+            return None
     def control_list_show(self):
         return self.control_list
     def set_state(self,state):
@@ -423,16 +524,13 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
 
             continue
 
-            # IDM模型参数
-            V_0 = MAX_SPEED  # 期望速度 (m/s)，可根据实际情况调整
-            T = 1.5  # 期望车头时距 (s)，可根据实际情况调整
-            a_max = 3  # 最大加速度 (m/s²)，与前面已定义的保持一致或按需调整
-            b = 2  # 舒适制动减速度 (m/s²)，可根据实际情况调整
-            s_0 = 2  # 最小间距 (m)，可根据实际情况调整
-            delta = 4  # 速度影响指数参数，可根据实际情况调整
+
 
         if vehicle_id in CAV_id_list:
+            #idm_acc = idm_acceleration(current_speed, front_vehicle_speed, gap, front_vehicle_id=None):
+
             if vehicles_list_this_lane[idx-1] in HDV_id_list:
+                #idm_acc = idm_acceleration(initial_state_CAV[vehicle_id][0], initial_state_HDV[vehicles_list_this_lane[idx-1]][0],initial_state_HDV[vehicles_list_this_lane[idx-1]][1]-initial_state_CAV[vehicle_id][1], front_vehicle_id=None)
                 HDVcons = HDVcons_left @ construct_HDV_block_matrix(num_CAV,CAV_id_list.index(vehicle_id))
                 HDVcons = HDVcons.reshape(1, -1)
                 HDVconsM = construct_block_diagonal_matrix(HDVcons,N)
@@ -445,6 +543,7 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
 
 
             elif vehicles_list_this_lane[idx-1] in CAV_id_list:
+                #idm_acc = idm_acceleration(initial_state_CAV[vehicle_id][0], initial_state_CAV[vehicles_list_this_lane[idx-1]][0],initial_state_CAV[vehicles_list_this_lane[idx-1]][1]-initial_state_CAV[vehicle_id][1], front_vehicle_id=None)
                 CAVcons = CAVcons_left @ construct_CAV_block_matrix(num_CAV,CAV_id_list.index(vehicle_id))
                 CAVcons = CAVcons.reshape(1, -1)
                 CAVconsM = construct_block_diagonal_matrix(CAVcons,N)
@@ -453,6 +552,7 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
                 Inequal_right = -1 *CAVconsM @ A_tilde @ X0 + LCAVsafe
                 # 加入不等式约束~~~~~~~~~~~~~
                 constraints.append(Inequal_with_u @ u <= Inequal_right)
+            #Lower_control_signal[vehicle_id] = idm_acc
 
     #限速
     speed_little_matrix = np.array([0,1]).reshape(1,-1)
@@ -477,7 +577,7 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
     #objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 100 * cp.norm(Soft, 2))
     try:
         print('有CAV位于首位')
-        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 10000*cp.norm(Soft,2))
+        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 1000*cp.norm(Soft,2))
     except:
         print('无CAV位于首位')
         objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u)
@@ -499,10 +599,14 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
     print("Optimal u:", u.value)
 
     i = 0
-    while i < N*len(CAV_id_list):
-        for vehicle in CAV_id_list:
-            control_signal[vehicle].control_list_append(u.value[i])
-            i += 1
+    try:
+        while i < N*len(CAV_id_list):
+            for vehicle in CAV_id_list:
+                control_signal[vehicle].control_list_append(u.value[i])
+                i += 1
+    except:
+        print(f'{lane_now} 求解失败')
+        pass
 
 #表面上是数学优化问题上约束满足的问题。所以我从数学上考虑加入软约束。但是这个问题的根本原因在于车芸协同控制/云边协同控制的最终的决定权在车还是在云。这种是一种强动态
 #环境下必须要考虑，但大家容易忽略的问题。我们认为在车，因为他直接面对动态环境。这是机制性的问题。只要有时延存在，就一定会遇到，只是概率大小。
@@ -532,6 +636,8 @@ lane_previous_vehicles = {}  # 用于存储每条车道上一时刻的车辆
 control_signal = {}
 Lower_control_signal = {}
 step = 0
+time_now = 0
+vehicle_threads = {}
 if __name__ == "__main__":
     start_sumo()
     # 读取SUMO网络
@@ -578,17 +684,24 @@ if __name__ == "__main__":
             just_left_vehicles, lane_previous_vehicles = get_vehicles_just_left(lane_previous_vehicles)
             update_cav_speeds('j3', traffic_light_to_lanes,last_quarter_vehicles,N,dt,L_safe)  # 更新 CAV 的速度控制
         for vehicle_id in vehicles_list:
+            if vehicle_id not in vehicle_threads:
+                # 如果发现新车辆，启动一个控制线程
+                if vehicle_id[0:3] == "CAV":
+                    traci.vehicle.setColor(vehicle_id, (255, 0, 0))
+                controller = VehicleController(vehicle_id)
+                controller.start()
+                vehicle_threads[vehicle_id] = controller
+                print(f"Started thread for vehicle {vehicle_id}")
             if vehicle_id not in control_signal.keys():
                 continue
             try:
                 if vehicle_id[0:3] == "CAV":
                     traci.vehicle.setSpeedMode(vehicle_id, 00000) #关闭跟驰模型
-                    acc_control = control_signal[vehicle_id].control_signal(time_now, dt)
+                    '''acc_control = control_signal[vehicle_id].control_signal(time_now, dt)
                     print(acc_control)
                     traci.vehicle.setAcceleration(vehicle_id, acc_control,1)
-
                     print(control_signal[vehicle_id].control_list_show())
-                    print(f"{vehicle_id}已施加加速度控制量：{acc_control}")
+                    print(f"{vehicle_id}已施加加速度控制量：{acc_control}")'''
             except Exception as e:
                 traci.vehicle.setSpeedMode(vehicle_id, 00000) #关闭跟驰模型
                 if vehicle_id[0:3] == "CAV":
@@ -600,11 +713,11 @@ if __name__ == "__main__":
                 pass
 
         elapsed_time = sim_end - sim_start
-        #if elapsed_time < 1:
-            #time.sleep(1-elapsed_time)
 
-
-            #update_cav_speeds('j3',traffic_light_to_lanes)  # 更新 CAV 的速度控制
+        # 检查和清理已停止的线程
+        for vehicle_id in list(vehicle_threads.keys()):
+            if not vehicle_threads[vehicle_id].is_alive():
+                del vehicle_threads[vehicle_id]
 
         record_data(step)  # 记录数据
         step += 1
