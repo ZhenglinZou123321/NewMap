@@ -70,8 +70,8 @@ vehicles = []
 # IDM模型参数
 V_0 = MAX_SPEED  # 期望速度 (m/s)，可根据实际情况调整
 T = 1.5  # 期望车头时距 (s)，可根据实际情况调整
-a_max = 3  # 最大加速度 (m/s²)，与前面已定义的保持一致或按需调整
-b = 2  # 舒适制动减速度 (m/s²)，可根据实际情况调整
+a_max = MAX_ACCEL  # 最大加速度 (m/s²)，与前面已定义的保持一致或按需调整
+b = -1*MIN_ACCEL  # 舒适制动减速度 (m/s²)，可根据实际情况调整
 s_0 = 2  # 最小间距 (m)，可根据实际情况调整
 delta = 4  # 速度影响指数参数，可根据实际情况调整
 
@@ -108,22 +108,30 @@ class VehicleController(threading.Thread):
                 # 检查车辆是否仍然在仿真中
                 if self.vehicle_id in traci.vehicle.getIDList():
                     # 示例控制逻辑：设置车辆速度
-                    speed = traci.vehicle.getSpeed(self.vehicle_id)
+                    self.speed = traci.vehicle.getSpeed(self.vehicle_id)
                     print("iiiii")
-                    front_info = traci.vehicle.getLeader(self.vehicle_id)
+                    self.front_info = traci.vehicle.getLeader(self.vehicle_id)
                     print("ddddd")
                     self.idm_acc = None
-                    if front_info != None:
-                        front_id,gap = front_info
-                        self.idm_acc = idm_acceleration(speed, traci.vehicle.getSpeed(front_id), gap, front_vehicle_id=None)
+                    if self.front_info != None:
+                        self.front_id,self.gap = self.front_info
+                        print(f"{self.vehicle_id}的前车是{self.front_id}")
+                    if self.front_info != None and traci.vehicle.getLaneID(self.vehicle_id) == traci.vehicle.getLaneID(self.front_id):
+                        self.idm_acc = idm_acceleration(self.speed, traci.vehicle.getSpeed(self.front_id), self.gap, front_vehicle_id=None)
                     else:
-                        self.lane_now = traci.vehicle.getLaneID(vehicle_id)
-                        phase,remaining_time = get_remaining_phase_and_time(self.lane_now)
-                        if phase == 'r' or phase == 'y':
-                            lane_length = traci.lane.getLength(self.lane_now)
-                            self.idm_acc = idm_acceleration(speed, 0,
-                                                        lane_length-traci.vehicle.getLanePosition(self.vehicle_id),
+                        self.lane_now = traci.vehicle.getLaneID(self.vehicle_id)
+                        self.phase,self.remaining_time = get_remaining_phase_and_time(self.lane_now)
+                        if self.phase == 'r' or self.phase == 'y':
+                            self.lane_length = traci.lane.getLength(self.lane_now)
+                            self.idm_acc = idm_acceleration(self.speed, 0.0,
+                                                        self.lane_length-traci.vehicle.getLanePosition(self.vehicle_id),
                                                         front_vehicle_id=None)
+                            print("kkk")
+                            print(self.lane_now)
+                            print(self.vehicle_id)
+                            print(self.lane_length)
+                            print(traci.vehicle.getLanePosition(self.vehicle_id))
+                            print(self.idm_acc)
                     if self.vehicle_id[0:3] == "CAV":
                         if len(control_signal[self.vehicle_id].control_list) != 0:
                             traci.vehicle.setSpeedMode(self.vehicle_id, 00000)  # 关闭跟驰模型
@@ -577,7 +585,7 @@ def QP_solver(initial_state_CAV,initial_state_HDV,vehicles_list_this_lane,N,dt,v
     #objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 100 * cp.norm(Soft, 2))
     try:
         print('有CAV位于首位')
-        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 1000*cp.norm(Soft,2))
+        objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u + 10*cp.norm(Soft,2))
     except:
         print('无CAV位于首位')
         objective = cp.Minimize(cp.quad_form(u, half_H_qp) + C_T @ u)
