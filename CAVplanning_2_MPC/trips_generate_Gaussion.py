@@ -19,6 +19,8 @@ depart_times = depart_times[depart_times >= 0]  # 保证出发时间大于等于
 depart_times = depart_times[depart_times <= total_seconds]  # 保证出发时间小于等于 total_seconds
 depart_times = np.sort(depart_times)  # 排序出发时间
 
+entry_edges = ['j4tj5','j1tj5','j2tj6','j3tj7','j8tj7','j13tj12','j16tj12','j15tj11','j14tj10','j9tj10']    # 替换为实际的入口边
+exit_edges =  ['j5tj4','j5tj1','j6tj2','j7tj3','j7tj8','j12tj13','j12tj16','j11tj15','j10tj14','j10tj9']   # 替换为实际的出口边
 
 
 # 定义出发和到达边
