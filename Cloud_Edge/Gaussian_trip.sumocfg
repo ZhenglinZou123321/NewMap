@@ -1,0 +1,10 @@
+<configuration>
+	<input>
+		<net-file value="Map_new.net.xml"/>
+		<route-files value="Gaussian.rou.xml"/>
+	</input>
+	<output>
+    		<tripinfo-output value="tripinfo.xml"/>
+            <edgeData id="edge_data" file="edge_data.xml" freq="60"/>
+	</output>
+</configuration>

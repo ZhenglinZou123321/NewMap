@@ -153,7 +153,7 @@ class VehicleController(threading.Thread):
                     self.running = False
             except Exception as e:
                 print(f"Error controlling vehicle {self.vehicle_id}: {e}")
-                self.running = False
+                #self.running = False
 
             # 控制逻辑运行间隔
             time.sleep(0.0001)
@@ -627,18 +627,22 @@ if __name__ == '__main__':
     #traci.start(["sumo-gui", "-c", "Gaussian_trip.sumocfg","--start","--step-length",'0.2',"--remote-port",'8813'])
     #traci.start(["sumo-gui", "-c", "Gaussian_trip.sumocfg", "--start", "--step-length", '0.2','--port','14491'])
     sumo_cmd = [
-        "sumo",
+        "sumo-gui",
+        "--start",
         "-c", "Gaussian_trip.sumocfg",
         "--step-length", "0.2",
-        "--num-clients","3"
+        "--num-clients","2"
     ]
 
     # 使用增强配置启动连接
-    traci.start(
+    simulator = traci.start(
         sumo_cmd,
         port= 14491,
         numRetries=5  # 最多重试5次
     )
+    print('started')
+    traci.setOrder(2)
+
     net = sumolib.net.readNet("Map_new.net.xml")  # 替换为您的 .net.xml 文件路径
 
     with open("Graph/junction_index.json", "r") as f:
@@ -745,6 +749,7 @@ if __name__ == '__main__':
                 print(f"An error occurred: {e}")
                 print(f"{vehicle_id}加速度施加失败")
                 pass
+
 
 
             # 获取车辆当前所在的 edge
