@@ -17,6 +17,7 @@ import time
 import copy
 from Solver_utils import QP_solver
 from  network_utils import check_and_kill_port
+import socket
 
 # 车辆参数
 MAX_SPEED = 11  # 最大速度 (m/s)
@@ -63,6 +64,8 @@ if __name__ == '__main__':
         port= 14491,
         numRetries=5  # 最多重试5次
     )
+    sock = traci.getConnection("default")._socket  # 获取 TraCI 的底层 socket
+    sock.setblocking(False)  # 设置为非阻塞
 
     print('started')
     traci.setOrder(2)

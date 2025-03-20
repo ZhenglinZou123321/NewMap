@@ -423,7 +423,7 @@ def get_state(intersection_id,Intersection_Edge_Dict,lane_index_dict,lane_adj,no
                 vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
                 dentisy_from = vehicle_occupancy_length/traci.lane.getLength(one_lane)
                 signal_index,remain_time = get_lane_state(one_lane, lane_index_dict, lane_adj)
-                from_temp.extend([dentisy_to, signal_index, remain_time])
+                from_temp.extend([dentisy_from, signal_index, remain_time])
             from_temp += [0] * (3 * 3 - len(from_temp))
             next_state_of_last.extend(from_temp)
 
@@ -456,7 +456,7 @@ def get_state(intersection_id,Intersection_Edge_Dict,lane_index_dict,lane_adj,no
                 vehicle_occupancy_length = sum(traci.vehicle.getLength(vehicle_id) for vehicle_id in vehicle_ids)
                 dentisy_from = vehicle_occupancy_length/traci.lane.getLength(one_lane)
                 signal_index,remain_time = get_lane_state(one_lane, lane_index_dict, lane_adj)
-                from_temp.extend([dentisy_to,signal_index,remain_time])
+                from_temp.extend([dentisy_from,signal_index,remain_time])
             from_temp += [0]*(3*3 - len(from_temp))
             new_state.extend(from_temp)
 
