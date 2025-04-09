@@ -1,23 +1,23 @@
-import torch
+'''import torch
 import torch.nn as nn
 import torch.optim as optim
 import numpy as np
 import random
-from collections import deque
+from collections import deque'''
 import sumolib
 import traci
 import json
 import csv
 import pandas as pd
-import seaborn as sns
+'''import seaborn as sns
 import matplotlib.pyplot as plt
 import threading
 import re
 import time
-import copy
-from Solver_utils import QP_solver
+import copy'''
+#from Solver_utils import QP_solver
 from  network_utils import check_and_kill_port
-import socket
+#import socket
 
 # 车辆参数
 MAX_SPEED = 11  # 最大速度 (m/s)
@@ -54,7 +54,7 @@ if __name__ == '__main__':
         "sumo-gui",
         "-c", "Gaussian_trip.sumocfg",
         "--step-length", "0.2",
-        "--num-clients","2"
+        "--num-clients","8"
     ]
 
 
@@ -64,12 +64,18 @@ if __name__ == '__main__':
         port= 14491,
         numRetries=5  # 最多重试5次
     )
-    sock = traci.getConnection("default")._socket  # 获取 TraCI 的底层 socket
-    sock.setblocking(False)  # 设置为非阻塞
+    #sock = traci.getConnection("default")._socket  # 获取 TraCI 的底层 socket
+    #sock.setblocking(False)  # 设置为非阻塞
 
     print('started')
     traci.setOrder(2)
+    step = 0
+    while step < 3600*1:  # 仿真时间，例如1小时
+        traci.simulationStep()  # 每步执行仿真
 
+    traci.close()
+
+'''
     net = sumolib.net.readNet("Map_new.net.xml")  # 替换为您的 .net.xml 文件路径
 
     with open("Graph/junction_index.json", "r") as f:
@@ -105,7 +111,6 @@ if __name__ == '__main__':
     Least_Check_Time = 3
     train_batchsize = 32
     train_gap = 20
-    step = 0
     arrived_vehicles = set()
     vehicle_depart_times = {}
     total_travel_time = 0
@@ -128,9 +133,5 @@ if __name__ == '__main__':
 
 
 
-    vehicle_threads = {}
+    vehicle_threads = {}'''
 
-    while step < 3600*5:  # 仿真时间，例如1小时
-        traci.simulationStep()  # 每步执行仿真
-
-    traci.close()
